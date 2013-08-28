@@ -249,6 +249,9 @@ static void sigsegv_handler(int sig_no, siginfo_t *info, void *ctx)
 	 */
 	if (eip != mem_addr)
 	{
+#ifdef COUNT_PROF 
+		cgc->opt_jind_nothit_count++;
+#endif
 		/* first time */
 		page = (uint8_t *)GET_PAGE(mem_addr);
 		fill_page_with_int(page);
@@ -265,6 +268,9 @@ static void sigsegv_handler(int sig_no, siginfo_t *info, void *ctx)
 	}
 	else if (eip == mem_addr)
 	{
+#ifdef COUNT_PROF 
+		cgc->opt_jind_nothit_count++;
+#endif
 		/* mem_addr is the shadow table's entry */
 		fprintf(stderr, "*******mem_addr is %x***********, *mem_addr is %x*****\n", mem_addr, *(uint32_t *)mem_addr);
 
@@ -1482,10 +1488,6 @@ bool emit_call_near_mem(CPUX86State *env, decode_t *ds)
 	INCL_COUNT(cind_dyn_count);
 	ADD_INSNS_COUNT(cgc->insn_dyn_count, cur_tb->insn_count + 1);
 
-#ifdef PROF_CIND
-	cemit_ind_count(env, ds);
-#endif
-	PUSH_PATH(env, true);
 
 	bool dest_based_on_esp = false;
 	if(ds->modrm.parts.reg == 0x4u) {
@@ -1499,17 +1501,13 @@ bool emit_call_near_mem(CPUX86State *env, decode_t *ds)
 
 	ABORT_IF((dest_based_on_esp == true), "error dest_based on esp\n");
 
+
 	/* Push cgc->pc_ptr */
 	code_emit8(env->code_ptr, 0x68u);     /* PUSH */
 	code_emit32(env->code_ptr, cgc->pc_ptr);
 
 	/* Push (dest) */
 	emit_push_rm(&env->code_ptr, ds);
-
-#ifdef CALL_RAS_OPT
-	uint8_t *patch_addr_call;
-	patch_addr_call = cemit_push_ras_ind(env);
-#endif
 
 #ifdef RET_CACHE
 	uint8_t *patch_addr_rc;
@@ -1547,17 +1545,7 @@ bool emit_call_near_mem(CPUX86State *env, decode_t *ds)
 	code_emit8(env->code_ptr, 0x59);
 #endif
 
-#ifdef CALL_IND_OPT
 	cemit_ind_opt(env, IND_TYPE_CALL);
-#else
-#ifdef SIEVE_OPT
-	cemit_sieve(env, (uint32_t)env->sieve_hashtable);
-#endif
-#endif
-
-#ifdef CALL_RAS_OPT
-	*(uint32_t *)patch_addr_call = (uint32_t)env->code_ptr;
-#endif
 
 #ifdef RET_CACHE
 	cemit_rc_cmp(env, patch_addr_rc, false);
@@ -1905,6 +1893,7 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr)
 	/* popf */
 	code_emit8(env->code_ptr, 0x9d);
 
+	INCL_COUNT(opt_jind_dyn_count);
 	/* jmp *offset(,index,scale) */
 	/* offset =  displacement + ss_offset 
 	 * jump into the corresponding shadow rodata
@@ -1915,12 +1904,12 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr)
 		code_emit8(env->code_ptr, 0x24);
 		code_emit8(env->code_ptr, (scale << 6) + (reg << 3) + 0x5);
 		code_emit32(env->code_ptr, displacement + ss_offset); 
-		fprintf(stderr, "*******shadow displacement is %x\n", displacement + ss_offset);
 	}
 
 	//patch-here
 	*patch_here = (uint32_t)env->code_ptr - (uint32_t)patch_here - 4;
 
+	INCL_COUNT(opt_failed_jind_dyn_count);
 	/* popf */
 	code_emit8(env->code_ptr, 0x9d);
 
@@ -1944,7 +1933,9 @@ bool emit_jmp_near_mem(CPUX86State *env, decode_t *ds)
 	fprintf(logfile, "\n");
 #endif
 		
+	cgc->j_ind_count++;
 		
+	INCL_COUNT(jind_dyn_count);
 	/* first, at the translation period,judge if the instuction's patten is jmp *disp(,reg,scale) or not
 	 * if it is, then translate this instruction with rodata shadowing method,
 	 * or go with the common method.

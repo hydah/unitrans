@@ -70,7 +70,7 @@
     #define PROF_CIND
 #endif
 
-//#define COUNT_PROF
+#define COUNT_PROF
 #ifdef COUNT_PROF
     #ifdef J_IND_OPT
         #define PROF_JIND

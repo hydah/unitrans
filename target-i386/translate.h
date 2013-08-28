@@ -163,11 +163,14 @@ typedef struct code_gen_context {
 
     uint64_t cind_nothit_count;
     uint64_t jind_nothit_count;
+	uint64_t opt_jind_nothit_count;
 	/* for mru */
 	uint64_t jind_mru_hit_count;
 	uint64_t cind_mru_hit_count;
 	uint64_t mru_replace_count;
 
+	uint64_t opt_jind_dyn_count;
+	uint64_t opt_failed_jind_dyn_count;
     uint64_t jind_dyn_count;
 	uint64_t switch_type_jind;
 	uint64_t switch_type_cind;
