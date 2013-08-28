@@ -1481,7 +1481,10 @@ bool emit_call_disp(CPUX86State *env, decode_t *ds)
 /* extra code size = 23(rc_1) + 30(sieve) + 49(rc_2) = 102 */
 bool emit_call_near_mem(CPUX86State *env, decode_t *ds)
 {
-	uint32_t addr;
+    uint32_t addr;
+	uint32_t retno;
+
+	sa_ptn cur_ptn, *ptn_ptr = &cur_ptn;
 
 	cgc->call_ind_count++;
 
@@ -1506,10 +1509,20 @@ bool emit_call_near_mem(CPUX86State *env, decode_t *ds)
 	code_emit8(env->code_ptr, 0x68u);     /* PUSH */
 	code_emit32(env->code_ptr, cgc->pc_ptr);
 
+
+	memset(ptn_ptr, 0, sizeof(sa_ptn));
+
+	retno = judge_type(ds, ptn_ptr);
+
+	if (retno == CAN_OPT)
+	{
+		shadow_translate(env, ds, ptn_ptr);
+	}
+
 	/* Push (dest) */
 	emit_push_rm(&env->code_ptr, ds);
 
-#ifdef RET_CACHE
+#ifdef aRET_CACHE
 	uint8_t *patch_addr_rc;
 
 	/* push %ecx */
@@ -1518,7 +1531,7 @@ bool emit_call_near_mem(CPUX86State *env, decode_t *ds)
 	code_emit8(env->code_ptr, 0x8b);
 	code_emit8(env->code_ptr, 0x4c); /* 01 001(ECX) 100 */
 	code_emit8(env->code_ptr, 0x24); /* 00 100 100 */
-	code_emit8(env->code_ptr, 0);
+	code_emit8(env->code_ptr, 4);
 
 
 	/* pushf */
@@ -1547,7 +1560,7 @@ bool emit_call_near_mem(CPUX86State *env, decode_t *ds)
 
 	cemit_ind_opt(env, IND_TYPE_CALL);
 
-#ifdef RET_CACHE
+#ifdef aRET_CACHE
 	cemit_rc_cmp(env, patch_addr_rc, false);
 #endif
 	return trans_next(env, ds, false);
@@ -1797,55 +1810,54 @@ static int judge_type(decode_t *tds, sa_ptn *ptn_ptr)
 		{
 			case 0:// no displacement
 				if (tds->modrm.parts.rm == 4 && tds->sib.parts.base == 5)
-				{
+				{//base(,reg,scale)
 					ptn_ptr->flag = DISP_MEM;
 					ptn_ptr->scale = tds->sib.parts.ss;
 					ptn_ptr->reg = tds->sib.parts.index;
 					ptn_ptr->displacement = tds->displacement;
-					return IS_JMP;
+					return CAN_OPT;
 				}
-				return INITIAL;
-#if 0
+#if 0 
 				else if (tds->modrm.parts.rm == 5)
-				{
+				{//(mem)
 					ptn_ptr->flag = MEM;
 					ptn_ptr->scale = 0;
 					ptn_ptr->reg = tds->modrm.parts.rm; 
 					ptn_ptr->displacement = tds->displacement;
-					return INITIAL;
+					return CANNOT_OPT;
 				}
 				else if(tds->modrm.parts.rm !=4 && tds->modrm.parts.rm != 5)
-				{
+				{//(reg)
 					ptn_ptr->flag = REG_MEM;
 					ptn_ptr->scale = 0;
 					ptn_ptr->reg = tds->modrm.parts.rm; 
 					ptn_ptr->displacement = 0;
-					return IS_JMP;
+					return CAN_OPT;
 				}
-				return INITIAL;
+				return CANNOT_OPT;
 			case 1://displacement 8bit
 			case 2://displacement 32bit
 				if (tds->modrm.parts.rm != 4)
-				{
+				{//disp(reg)
 					ptn_ptr->flag = REG_MEM;
 					ptn_ptr->scale = 0;
 					ptn_ptr->reg = tds->modrm.parts.rm; 
 					ptn_ptr->displacement = tds->displacement;
 				}
-				return IS_JMP;
+				return CAN_OPT;
 			case 3://reg
 				ptn_ptr->flag = REG;
 				ptn_ptr->scale = -1;
 				ptn_ptr->reg = tds->modrm.parts.rm; 
 				ptn_ptr->displacement = 0;
-				return INITIAL;
+				return CANNOT_OPT;
 #endif
 			default:
-				return INITIAL;
+				return CANNOT_OPT;
 		}
 	}
 
-	return INITIAL;
+	return CANNOT_OPT;
 }
 
 /* extra code size = 30(sieve) */
@@ -1859,6 +1871,7 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr)
 	fprintf(stderr, "*********sh_base is %x\n", (uint32_t)sh_base);
 	fprintf(stderr, "*********sr_base is %x\n", (uint32_t)sr_base);
 	fprintf(stderr, "*********ss_offset is %x\n", (uint32_t)ss_offset);
+	fprintf(stderr, "*********srd_bounce is %x\n", (uint32_t)srd_bounce);
 
 	uint32_t displacement, scale, reg;
 	uint32_t a;
@@ -1876,6 +1889,7 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr)
 
 	/* calculate upper according to type */
 	upper = srd_bounce - displacement;
+	fprintf(stderr, "upper is %d\n", upper);
 	upper = upper >> scale;
 
 	/* pushf */
@@ -1885,9 +1899,9 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr)
 	code_emit8(env->code_ptr, 0x1f << 3 + reg); /* 11 111 reg */
 	code_emit32(env->code_ptr, upper);
 
-	/* jae patch-here */
+	/* jg patch-here //signed jump*/
 	code_emit8(env->code_ptr, 0x0f);
-	code_emit8(env->code_ptr, 0x83);
+	code_emit8(env->code_ptr, 0x8f);
 	patch_here = env->code_ptr;
 	code_emit32(env->code_ptr, NEED_PATCH_32);
 	/* popf */
@@ -1912,7 +1926,6 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr)
 	INCL_COUNT(opt_failed_jind_dyn_count);
 	/* popf */
 	code_emit8(env->code_ptr, 0x9d);
-
 }
 
 bool emit_jmp_near_mem(CPUX86State *env, decode_t *ds)
@@ -1952,7 +1965,7 @@ bool emit_jmp_near_mem(CPUX86State *env, decode_t *ds)
 
 	retno = judge_type(ds, ptn_ptr);
 
-	if (retno == IS_JMP)
+	if (retno == CAN_OPT)
 	{
 		shadow_translate(env, ds, ptn_ptr);
 	}
@@ -2280,6 +2293,7 @@ static void cemit_count_each_tb_ind_miss(CPUX86State *env, TranslationBlock *tb)
 }
 #endif
 
+#if 0
 #ifdef SWITCH_OPT
 bool emit_sa(CPUX86State *env, decode_t *ds)
 {
@@ -2604,4 +2618,5 @@ static uint32_t parse_sa(decode_t *tds)
 	}
 	return INITIAL;
 }
+#endif
 #endif

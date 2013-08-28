@@ -16,8 +16,8 @@
 #include "decode.h"
 #include "emit.h"
 
-#define IS_MOV 1
-#define IS_JMP 2
+#define CANNOT_OPT 0 
+#define CAN_OPT 1
 
 #define DISP_MEM 3
 #define REG_MEM 4
