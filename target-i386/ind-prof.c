@@ -635,6 +635,10 @@ void prof_stat(CPUX86State *env)
     fprintf(stderr, "j_ind: \t%d\n", cgc->j_ind_count);
     fprintf(stderr, "call: \t%d\n", cgc->call_count);
     fprintf(stderr, "call_ind: \t%d\n", cgc->call_ind_count);
+#ifdef SWITCH_OPT
+	fprintf(stderr, "switch-case_num: \t%u\n", sa_num);
+	fprintf(stderr, "call-table_num: \t%u\n", call_table);
+#endif
     fprintf(stderr, "ret: \t%d\n", cgc->ret_count);
     fprintf(stderr, "retIz: \t%d\n", cgc->retIw_count);
     fprintf(stderr, "direct_trans_count: \t%d\n", 
@@ -670,7 +674,13 @@ void prof_stat(CPUX86State *env)
     fprintf(stderr, "sv_miss_dyn: \t%u\n", cgc->sv_miss_count);
     fprintf(stderr, "sv_travel_dyn: \t%llu\n", cgc->sv_travel_count);
     fprintf(stderr, "jind_dyn: \t%llu\n", cgc->jind_dyn_count);
+    fprintf(stderr, "switch_type_jind: \t%llu\n", cgc->switch_type_jind);
+    fprintf(stderr, "switch_type_jind_rate: \t%s%%\n", 
+                     calc_perc(cgc->switch_type_jind, cgc->jind_dyn_count));
     fprintf(stderr, "cind_dyn: \t%llu\n", cgc->cind_dyn_count);
+    fprintf(stderr, "switch_type_cind: \t%llu\n", cgc->switch_type_cind);
+    fprintf(stderr, "switch_type_cind_rate: \t%s%%\n", 
+                     calc_perc(cgc->switch_type_cind, cgc->jind_dyn_count));
 #ifdef J_IND_OPT
     fprintf(stderr, "jind_nothit: \t%llu\n", cgc->jind_nothit_count);
 #endif
@@ -728,10 +738,6 @@ void prof_stat(CPUX86State *env)
 		fprintf(stderr, "\t\treplace count is %d \n", tb->ind_replace_count);
 	}
 #endif
-#endif
-#ifdef SWITCH_OPT
-	fprintf(stderr, "switch-case_num: \t%u\n", sa_num);
-	fprintf(stderr, "call-table_num: \t%u\n", call_table);
 #endif
 }
 

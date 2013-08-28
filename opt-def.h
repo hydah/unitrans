@@ -5,6 +5,19 @@
 #define SIEVE_OPT
 #define SEP_SIEVE
 
+
+#define SHA_RODATA
+#ifdef SHA_RODATA
+	#define PAGESIZE    4096
+	#define GET_PAGE(v) (((int)v) & (~(PAGESIZE -1)))
+	#ifdef DEBUG_GHT
+		#define GHT_DBG(...) fprintf(stderr, __VA_ARGS__);
+	#else
+		#define GHT_DBG(...) ((void )0);
+	#endif
+#endif
+
+
 #define VAR_TGT
 //#define VAR_TGT2
 #define VAR_TGT_EACH
@@ -41,7 +54,7 @@
 #endif
 
 #define TRANS_NEXT
-///#define PATCH_IN_TB
+//#define PATCH_IN_TB
 
 #define PATH_STACK_SIZE	64
 #define RETRANS_TB_TAG	0x10
@@ -73,7 +86,7 @@
     #define PROF_IND
 #endif
 
-///#define PROF_PATH_WO_IND
+//#define PROF_PATH_WO_IND
 #define PATH_IND_TAG	0xdeadbeef
 
 #define STAT_NODE_MAX	2048 * 8

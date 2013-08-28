@@ -18,7 +18,13 @@
 
 #define IS_MOV 1
 #define IS_JMP 2
-#define IS_CALL 3
+
+#define DISP_MEM 3
+#define REG_MEM 4
+#define MEM 5
+#define REG 6 
+
+#define IS_CALL 7
 #define INITIAL 0
 
 extern uint8_t *code_gen_ptr;
@@ -163,6 +169,8 @@ typedef struct code_gen_context {
 	uint64_t mru_replace_count;
 
     uint64_t jind_dyn_count;
+	uint64_t switch_type_jind;
+	uint64_t switch_type_cind;
     uint64_t cind_dyn_count;
 #endif
     stat_node stat_nodes[STAT_NODE_MAX];
