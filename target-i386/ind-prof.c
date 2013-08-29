@@ -467,7 +467,7 @@ static void calc_ind_hit(void)
             calc_perc(cgc->jind_mru_hit_count + cgc->cind_mru_hit_count, ind_count));
 	fprintf(stderr, "jind_mru_hit_count: %d\n", cgc->jind_mru_hit_count);
 	fprintf(stderr, "cind_mru_hit_count: %d\n", cgc->cind_mru_hit_count);
-	fprintf(stderr, "opt_jind_dyn_count: %d\n", cgc->opt_jind_dyn_count);
+	fprintf(stderr, "opt_jind_dyn_count: %llu\n", cgc->opt_jind_dyn_count);
 	fprintf(stderr, "opt_failed_jind_dyn_count: %d\n", cgc->opt_failed_jind_dyn_count);
 	fprintf(stderr, "opt_jind_nothit_count:%d\n", cgc->opt_jind_nothit_count);
 	fprintf(stderr, "opt_ratio:%s%%\n", 

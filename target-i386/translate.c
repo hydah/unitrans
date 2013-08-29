@@ -230,11 +230,12 @@ static void sigsegv_handler(int sig_no, siginfo_t *info, void *ctx)
 	eip = cont->uc_mcontext.gregs[14];
 	mem_addr = info->si_addr;
 
-	fprintf(stderr, "cc_ptr is %x\n", eip);
-	fprintf(stderr, "the code is %d\n", info->si_code);
-	fprintf(stderr, "the si_addr is %x\n", info->si_addr);
-	fprintf(stderr, "the eax is %x\n", cont->uc_mcontext.gregs[11]);
-	fprintf(stderr, "the esp is %x\n", cont->uc_mcontext.gregs[7]);
+	fprintf(stderr, "*****this is %s*****\n", __FUNCTION__);
+	fprintf(stderr, "\tcc_ptr is %x\n", eip);
+	fprintf(stderr, "\tthe code is %d\n", info->si_code);
+	fprintf(stderr, "\tthe si_addr is %x\n", info->si_addr);
+	fprintf(stderr, "\tthe eax is %x\n", cont->uc_mcontext.gregs[11]);
+	fprintf(stderr, "\tthe esp is %x\n", cont->uc_mcontext.gregs[7]);
 
 	/* At first, this page's permition must be PROT_NONE, that is to say, it cann't be read.
 	 * When this page is accessed for the first time, this page's permition must be changed
@@ -1205,7 +1206,7 @@ static void cemit_ind_opt(CPUX86State *env, int m_ind_type)
 	uint32_t *patch_mru_src;
 	uint32_t *patch_mru_dest;
 
-    qemu_log("jind: pc:0x%x\n", cgc->pc_ptr - cgc->insn_len);
+   // qemu_log("jind: pc:0x%x\n", cgc->pc_ptr - cgc->insn_len);
 
     cur_tb->ind_tgt = &ind_tgt_nodes[nb_ind_tgt_nodes++];
     ABORT_IF(nb_ind_tgt_nodes > IND_TGT_NODE_MAX, "ind nodes overflow\n");
@@ -1481,6 +1482,21 @@ bool emit_call_disp(CPUX86State *env, decode_t *ds)
 /* extra code size = 23(rc_1) + 30(sieve) + 49(rc_2) = 102 */
 bool emit_call_near_mem(CPUX86State *env, decode_t *ds)
 {
+#ifdef aDEBUG_DISAS
+	if (qemu_loglevel_mask(CPU_LOG_TB_IN_ASM)) {
+		int disas_flags;
+		//qemu_log("IN: [size=%d] %s tb_tag: 0x%x\n",
+				//           ds->pInstr - ds->instr,
+				//         lookup_symbol(cgc->pc_start), cur_tb->tb_tag);
+		disas_flags = 0;
+		log_target_disas(cgc->pc_ptr - cgc->insn_len, cgc->insn_len, disas_flags);
+	}
+	fprintf(logfile, "ds->modrm.byte is %x\n", ds->modrm.byte);
+	fprintf(logfile, "ds->sib.byte is %x\n", ds->sib);
+	fprintf(logfile, "ds->displacement is %x\n", ds->displacement);
+	fprintf(logfile, "ds->immediate is %x\n", ds->immediate);
+	fprintf(logfile, "\n");
+#endif
     uint32_t addr;
 	uint32_t retno;
 
@@ -1514,10 +1530,12 @@ bool emit_call_near_mem(CPUX86State *env, decode_t *ds)
 
 	retno = judge_type(ds, ptn_ptr);
 
+#if 0 
 	if (retno == CAN_OPT)
 	{
 		shadow_translate(env, ds, ptn_ptr);
 	}
+#endif
 
 	/* Push (dest) */
 	emit_push_rm(&env->code_ptr, ds);
@@ -1817,7 +1835,7 @@ static int judge_type(decode_t *tds, sa_ptn *ptn_ptr)
 					ptn_ptr->displacement = tds->displacement;
 					return CAN_OPT;
 				}
-#if 0 
+#if 1
 				else if (tds->modrm.parts.rm == 5)
 				{//(mem)
 					ptn_ptr->flag = MEM;
@@ -1836,6 +1854,16 @@ static int judge_type(decode_t *tds, sa_ptn *ptn_ptr)
 				}
 				return CANNOT_OPT;
 			case 1://displacement 8bit
+				if (tds->modrm.parts.rm != 4)
+				{//disp(reg)
+					ptn_ptr->flag = REG_MEM;
+					ptn_ptr->scale = 0;
+					ptn_ptr->reg = tds->modrm.parts.rm; 
+					ptn_ptr->displacement = tds->displacement;
+					return CAN_OPT;
+				}
+				return CANNOT_OPT;
+
 			case 2://displacement 32bit
 				if (tds->modrm.parts.rm != 4)
 				{//disp(reg)
@@ -1843,8 +1871,9 @@ static int judge_type(decode_t *tds, sa_ptn *ptn_ptr)
 					ptn_ptr->scale = 0;
 					ptn_ptr->reg = tds->modrm.parts.rm; 
 					ptn_ptr->displacement = tds->displacement;
+					return CAN_OPT;
 				}
-				return CAN_OPT;
+				return CANNOT_OPT;
 			case 3://reg
 				ptn_ptr->flag = REG;
 				ptn_ptr->scale = -1;
@@ -1868,10 +1897,11 @@ static int judge_type(decode_t *tds, sa_ptn *ptn_ptr)
  */
 void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr)
 {
-	fprintf(stderr, "*********sh_base is %x\n", (uint32_t)sh_base);
-	fprintf(stderr, "*********sr_base is %x\n", (uint32_t)sr_base);
-	fprintf(stderr, "*********ss_offset is %x\n", (uint32_t)ss_offset);
-	fprintf(stderr, "*********srd_bounce is %x\n", (uint32_t)srd_bounce);
+	fprintf(stderr, "*****this is %s*****\n", __FUNCTION__);
+	fprintf(stderr, "\tsh_base is %x\n", (uint32_t)sh_base);
+	fprintf(stderr, "\tsr_base is %x\n", (uint32_t)sr_base);
+	fprintf(stderr, "\tss_offset is %x\n", (uint32_t)ss_offset);
+	fprintf(stderr, "\tsrd_bounce is %x\n", (uint32_t)srd_bounce);
 
 	uint32_t displacement, scale, reg;
 	uint32_t a;
@@ -1883,20 +1913,35 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr)
 	reg = ptn_ptr->reg;
 	displacement = ptn_ptr->displacement;
 	flag = ptn_ptr->flag;
-	fprintf(stderr, "reg is %x\n", reg);
-	fprintf(stderr, "src displacement is %x\n", displacement);
-	fprintf(stderr, "scale  is %d\n", scale);
+	fprintf(stderr, "\treg is %x\n", reg);
+	fprintf(stderr, "\tsrc displacement is %x\n", displacement);
+	fprintf(stderr, "\tscale  is %d\n", scale);
 
 	/* calculate upper according to type */
 	upper = srd_bounce - displacement;
-	fprintf(stderr, "upper is %d\n", upper);
+	fprintf(stderr, "\tupper is %d\n", upper);
 	upper = upper >> scale;
+
+	if (flag == MEM)
+	{
+		if (upper > 0)
+		{
+			INCL_COUNT(opt_jind_dyn_count);
+
+			code_emit8(env->code_ptr, 0xff);
+			code_emit8(env->code_ptr, 0x25);
+			code_emit32(env->code_ptr, displacement + ss_offset);
+		}
+
+		INCL_COUNT(opt_failed_jind_dyn_count);
+		return;
+	}
 
 	/* pushf */
 	code_emit8(env->code_ptr, 0x9c); 
 	/* cmp reg, (srd-bounce - base) */
 	code_emit8(env->code_ptr, 0x81);
-	code_emit8(env->code_ptr, 0x1f << 3 + reg); /* 11 111 reg */
+	code_emit8(env->code_ptr, (0x1f << 3) + reg); /* 11 111 reg */
 	code_emit32(env->code_ptr, upper);
 
 	/* jg patch-here //signed jump*/
@@ -1918,6 +1963,12 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr)
 		code_emit8(env->code_ptr, 0x24);
 		code_emit8(env->code_ptr, (scale << 6) + (reg << 3) + 0x5);
 		code_emit32(env->code_ptr, displacement + ss_offset); 
+	}
+	else if (flag == REG_MEM)
+	{
+		code_emit8(env->code_ptr, 0xff);
+		code_emit8(env->code_ptr, (0xa << 4) + reg);
+		code_emit32(env->code_ptr, displacement + ss_offset);
 	}
 
 	//patch-here
