@@ -20,9 +20,9 @@
 
 #define VAR_TGT
 //#define VAR_TGT2
-#define VAR_TGT_EACH
+//#define VAR_TGT_EACH
 #define TGT_REPLACE_TH	10000
-#define TGT_REP_EACH_TH	10000
+#define TGT_REP_EACH_TH	100000
 #define IND_TB_MAX	4096
 
 //#define MRU_OPT

@@ -230,12 +230,14 @@ static void sigsegv_handler(int sig_no, siginfo_t *info, void *ctx)
 	eip = cont->uc_mcontext.gregs[14];
 	mem_addr = info->si_addr;
 
+#if 0
 	fprintf(stderr, "*****this is %s*****\n", __FUNCTION__);
 	fprintf(stderr, "\tcc_ptr is %x\n", eip);
 	fprintf(stderr, "\tthe code is %d\n", info->si_code);
 	fprintf(stderr, "\tthe si_addr is %x\n", info->si_addr);
 	fprintf(stderr, "\tthe eax is %x\n", cont->uc_mcontext.gregs[11]);
 	fprintf(stderr, "\tthe esp is %x\n", cont->uc_mcontext.gregs[7]);
+#endif
 
 	/* At first, this page's permition must be PROT_NONE, that is to say, it cann't be read.
 	 * When this page is accessed for the first time, this page's permition must be changed
@@ -264,7 +266,7 @@ static void sigsegv_handler(int sig_no, siginfo_t *info, void *ctx)
 		g_env->ind_type = IND_TYPE_CALL;
 		g_env->ret_tb = 3;
 		//*(uint32_t *)mem_addr = (uint32_t)cgc->tb_ret_addr;
-		fprintf(stderr, "*******mem_addr is %x***********, *mem_addr is %x*****\n", mem_addr, *(uint32_t *)mem_addr);
+	//	fprintf(stderr, "*******mem_addr is %x***********, *mem_addr is %x*****\n", mem_addr, *(uint32_t *)mem_addr);
 		cont->uc_mcontext.gregs[14] = (uint32_t)cgc->tb_ret_addr;
 	}
 	else if (eip == mem_addr)
@@ -273,7 +275,7 @@ static void sigsegv_handler(int sig_no, siginfo_t *info, void *ctx)
 		cgc->opt_jind_nothit_count++;
 #endif
 		/* mem_addr is the shadow table's entry */
-		fprintf(stderr, "*******mem_addr is %x***********, *mem_addr is %x*****\n", mem_addr, *(uint32_t *)mem_addr);
+		//fprintf(stderr, "*******mem_addr is %x***********, *mem_addr is %x*****\n", mem_addr, *(uint32_t *)mem_addr);
 
 		src_addr = mem_addr - ss_offset;
 		next_eip = *(uint32_t *)src_addr;
@@ -282,7 +284,7 @@ static void sigsegv_handler(int sig_no, siginfo_t *info, void *ctx)
 		g_env->ind_type = IND_TYPE_CALL;
 		g_env->ret_tb = 3;
 		//*(uint32_t *)mem_addr = (uint32_t)cgc->tb_ret_addr;
-		fprintf(stderr, "*******mem_addr is %x***********, *mem_addr is %x*****\n", mem_addr, *(uint32_t *)mem_addr);
+		//fprintf(stderr, "*******mem_addr is %x***********, *mem_addr is %x*****\n", mem_addr, *(uint32_t *)mem_addr);
 		cont->uc_mcontext.gregs[14] = (uint32_t)cgc->tb_ret_addr;
 	}
 }
@@ -291,7 +293,7 @@ void mysig_init(void)
 {
 	struct sigaction act;
 	act.sa_flags = SA_SIGINFO;
-	fprintf(stderr, "mysig init\n");
+	//fprintf(stderr, "mysig init\n");
 	act.sa_sigaction = sigsegv_handler;
 	sigaction(SIGSEGV, &act, NULL);
 }
@@ -317,8 +319,8 @@ void codecache_prologue_init(CPUX86State *env)
     addr = (uint32_t)&(env->regs[R_EAX]);
     /* preserve a stack bucket for popf */
     env->regs[R_ESP] = env->regs[R_ESP] - 4;
-	fprintf(stderr, "env->reg[esp] is %x \n", env->regs[R_ESP]);
-	fprintf(stderr, "env->reg[eax] is %x \n", env->regs[R_EAX]);
+	//fprintf(stderr, "env->reg[esp] is %x \n", env->regs[R_ESP]);
+	//fprintf(stderr, "env->reg[eax] is %x \n", env->regs[R_EAX]);
 
     /* TB prologue */
     /* push %ebx, %ebp, %esi, %edi */
@@ -415,7 +417,7 @@ void codecache_prologue_init(CPUX86State *env)
 	mysig_init();
 	g_env = env;
 
-    fprintf(stderr, "initial pc: 0x%x\n", env->eip);
+    //fprintf(stderr, "initial pc: 0x%x\n", env->eip);
 
     make_tb(env, env->eip, env->eip, 0);
 }
@@ -1530,7 +1532,7 @@ bool emit_call_near_mem(CPUX86State *env, decode_t *ds)
 
 	retno = judge_type(ds, ptn_ptr);
 
-#if 0 
+#if 1 
 	if (retno == CAN_OPT)
 	{
 		shadow_translate(env, ds, ptn_ptr);
@@ -1540,7 +1542,7 @@ bool emit_call_near_mem(CPUX86State *env, decode_t *ds)
 	/* Push (dest) */
 	emit_push_rm(&env->code_ptr, ds);
 
-#ifdef aRET_CACHE
+#ifdef RET_CACHE
 	uint8_t *patch_addr_rc;
 
 	/* push %ecx */
@@ -1578,7 +1580,7 @@ bool emit_call_near_mem(CPUX86State *env, decode_t *ds)
 
 	cemit_ind_opt(env, IND_TYPE_CALL);
 
-#ifdef aRET_CACHE
+#ifdef RET_CACHE
 	cemit_rc_cmp(env, patch_addr_rc, false);
 #endif
 	return trans_next(env, ds, false);
@@ -1897,11 +1899,13 @@ static int judge_type(decode_t *tds, sa_ptn *ptn_ptr)
  */
 void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr)
 {
+#if 0
 	fprintf(stderr, "*****this is %s*****\n", __FUNCTION__);
 	fprintf(stderr, "\tsh_base is %x\n", (uint32_t)sh_base);
 	fprintf(stderr, "\tsr_base is %x\n", (uint32_t)sr_base);
 	fprintf(stderr, "\tss_offset is %x\n", (uint32_t)ss_offset);
 	fprintf(stderr, "\tsrd_bounce is %x\n", (uint32_t)srd_bounce);
+#endif
 
 	uint32_t displacement, scale, reg;
 	uint32_t a;
@@ -1913,14 +1917,17 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr)
 	reg = ptn_ptr->reg;
 	displacement = ptn_ptr->displacement;
 	flag = ptn_ptr->flag;
+#if 0
 	fprintf(stderr, "\treg is %x\n", reg);
 	fprintf(stderr, "\tsrc displacement is %x\n", displacement);
 	fprintf(stderr, "\tscale  is %d\n", scale);
+#endif
 
 	/* calculate upper according to type */
 	upper = srd_bounce - displacement;
-	fprintf(stderr, "\tupper is %d\n", upper);
+	//fprintf(stderr, "\tupper is %d\n", upper);
 	upper = upper >> scale;
+
 
 	if (flag == MEM)
 	{
@@ -1944,11 +1951,23 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr)
 	code_emit8(env->code_ptr, (0x1f << 3) + reg); /* 11 111 reg */
 	code_emit32(env->code_ptr, upper);
 
-	/* jg patch-here //signed jump*/
-	code_emit8(env->code_ptr, 0x0f);
-	code_emit8(env->code_ptr, 0x8f);
-	patch_here = env->code_ptr;
-	code_emit32(env->code_ptr, NEED_PATCH_32);
+	if (upper < 0)
+	{
+		/* jg patch-here //signed jump*/
+		code_emit8(env->code_ptr, 0x0f);
+		code_emit8(env->code_ptr, 0x8f);
+		patch_here = env->code_ptr;
+		code_emit32(env->code_ptr, NEED_PATCH_32);
+	}
+	else
+	{
+		/* jg patch-here //signed jump*/
+		code_emit8(env->code_ptr, 0x0f);
+		code_emit8(env->code_ptr, 0x83);
+		patch_here = env->code_ptr;
+		code_emit32(env->code_ptr, NEED_PATCH_32);
+	}
+
 	/* popf */
 	code_emit8(env->code_ptr, 0x9d);
 
@@ -1973,10 +1992,10 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr)
 
 	//patch-here
 	*patch_here = (uint32_t)env->code_ptr - (uint32_t)patch_here - 4;
-
-	INCL_COUNT(opt_failed_jind_dyn_count);
 	/* popf */
 	code_emit8(env->code_ptr, 0x9d);
+
+	INCL_COUNT(opt_failed_jind_dyn_count);
 }
 
 bool emit_jmp_near_mem(CPUX86State *env, decode_t *ds)
@@ -2016,10 +2035,12 @@ bool emit_jmp_near_mem(CPUX86State *env, decode_t *ds)
 
 	retno = judge_type(ds, ptn_ptr);
 
+#if 1 
 	if (retno == CAN_OPT)
 	{
 		shadow_translate(env, ds, ptn_ptr);
 	}
+#endif
 	
 
 	// cannot be optimized by this method

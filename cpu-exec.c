@@ -272,7 +272,7 @@ int cpu_exec(CPUState *env1)
 					addr = (uint32_t *)(env->sa_shadow);
 					*addr = tb->tc_ptr;
 					//fprintf(stderr, "shadow table base is %x\n", prev->shadow_base);
-					fprintf(stderr, "shadow table entry is %x\n", env->sa_shadow);
+					//fprintf(stderr, "shadow table entry is %x\n", env->sa_shadow);
 
 					env->sa_shadow = 0;
 					/* because i have set prev_tb->sa_base, prev_tb->shadow_base, prev_tb->sa_entry_num
