@@ -514,12 +514,14 @@ static int ind_prof_stat(void)
         }
 #endif
     }
+#if 0
     fprintf(stderr, "rec_hit_num: %llu\nrec_hitrate: %s%%\n", 
                     recent_hit_sum, calc_perc(recent_hit_sum, ind_count));
     fprintf(stderr, "max_hit_num: %llu\nmax_hitrate: %s%%\n", 
                     max_hit_sum, calc_perc(max_hit_sum, ind_count));
     fprintf(stderr, "prof_hit_num: %llu\nprof_hitrate: %s%%\n", 
                     prof_hit_sum, calc_perc(prof_hit_sum, ind_count));
+#endif
     return cgc->stat_node_count;
 }
 #endif
@@ -666,6 +668,8 @@ void prof_stat(CPUX86State *env)
     fprintf(stderr, "\tcind_reg_mem: \t%llu\n", cgc->cind_reg_mem);
     fprintf(stderr, "\tcind_mem: \t%llu\n", cgc->cind_mem);
     fprintf(stderr, "\tcind_reg: \t%llu\n", cgc->cind_reg);
+    fprintf(stderr, "cind_dyn: \t%llu\n", cgc->cind_dyn_count);
+
 #ifdef J_IND_OPT
     fprintf(stderr, "jind_nothit: \t%llu\n", cgc->jind_nothit_count);
 #endif
@@ -709,9 +713,6 @@ void prof_stat(CPUX86State *env)
     fprintf(stderr, "totalcode_size: \t%d\n", sieve_ptr_size + code_ptr_size);
 #if defined(PROF_IND) && defined(COUNT_PROF)
     fprintf(stderr, "ind2: \t%d\n", ind_prof_stat());
-#endif
-#ifdef VAR_TGT
-    fprintf(stderr, "tgt_replace_count: \t%d\n", env->tgt_replace_count);
 #endif
 }
 

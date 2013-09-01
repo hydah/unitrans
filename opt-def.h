@@ -1,31 +1,21 @@
 #ifndef __OPT_DEF_H__
 #define __OPT_DEF_H__
 
-#define SWITCH_OPT
 #define SIEVE_OPT
 #define SEP_SIEVE
-
+//#define COUNT_PROF
 
 #define SHA_RODATA
-//#define DEBUG_GHT
 #ifdef SHA_RODATA
-	#define PAGESIZE    4096
-	#define GET_PAGE(v) (((int)v) & (~(PAGESIZE -1)))
-	#ifdef DEBUG_GHT
-		#define GHT_DBG(...) fprintf(stderr, __VA_ARGS__);
-	#else
-		#define GHT_DBG(...) ((void )0);
-	#endif
+    #define SWITCH_OPT
+    #define PAGESIZE    4096
+    #define GET_PAGE(v) (((int)v) & (~(PAGESIZE -1)))
 #endif
-
-
-#define VAR_TGT
-//#define VAR_TGT2
-//#define VAR_TGT_EACH
-#define TGT_REPLACE_TH	10000
-#define TGT_REP_EACH_TH	100000
-#define IND_TB_MAX	4096
-
+#ifdef DEBUG_GHT
+	#define GHT_DBG(...) fprintf(stderr, __VA_ARGS__);
+#else
+	#define GHT_DBG(...) ((void )0);
+#endif
 #define J_IND_OPT
 #define CALL_IND_OPT
 //#define RC_IND_OPT
@@ -34,18 +24,21 @@
 #endif
 
 #ifdef IND_OPT
+    #define IND_SLOT_MAX 	3	
     //#define RETRANS_IND
 #endif
-#define RETRANS_THRESHOLD	100000
-#define RETRANS_STACK_MAX	4096 * 4
+
+#ifdef RETRANS_IND
+    #define RETRANS_THRESHOLD	100000
+    #define RETRANS_STACK_MAX	4096 * 4
+    #define PATH_DEPTH_MAX	5
+#endif
 
 #define TB_FROM_MAX	16
-#define IND_SLOT_MAX 	3	
-#define PATH_DEPTH_MAX	5
-#define PATH_DEPTH 8
+#define PATH_DEPTH 4
 
 //#define IND_TGT_TH
-#define	IND_THRESHOLD	100
+#define	IND_THRESHOLD	30
 
 #define RET_CACHE
 //#define CALL_RAS_OPT
@@ -63,14 +56,7 @@
 //#define ACROSS_JMP
 //#define USE_RET_TO_ENTER_SIEVE
 #define USE_CX_TO_CMP_RETCACHE
-//#define STATIC_PROF
 
-#ifdef STATIC_PROF
-    #define PROF_JIND
-    #define PROF_CIND
-#endif
-
-#define COUNT_PROF
 #ifdef COUNT_PROF
     #ifdef J_IND_OPT
         #define PROF_JIND

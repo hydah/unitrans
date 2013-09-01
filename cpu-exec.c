@@ -190,24 +190,7 @@ static void patch_ind_opt(TranslationBlock *prev_tb, TranslationBlock *tb)
     tgt_addr = env->eip;
 
     if(prev_tb->jmp_ind_index < IND_SLOT_MAX) {
-#ifdef STATIC_PROF
-        int pos, i;
-        //pos = find_profile_node(prev_tb);
-        pos = prev_tb->prof_pos;
-        if(pos != NOT_FOUND) {
-            for(i = 0; i < IND_SLOT_MAX; i++) {
-                tgt_addr = cgc->info_nodes[pos].tgt_addr[i];
-                if(tgt_addr == 0) break;
-                tb = get_next_tb(env, tgt_addr, prev_tb);
-                patch_jmp_target(prev_tb, tgt_addr, (uint32_t)tb->tc_ptr);
-            }
-        } else {
-            /* fill jmp_target */
-            patch_jmp_target(prev_tb, tgt_addr, (uint32_t)tb->tc_ptr);
-        }
-#else
         patch_jmp_target(prev_tb, tgt_addr, (uint32_t)tb->tc_ptr);
-#endif
     } else {
         /* jmp_target was already filled, add enter_sieve now */
         ind_patch_sieve(env, prev_tb->ind_enter_sieve);
@@ -217,9 +200,6 @@ static void patch_ind_opt(TranslationBlock *prev_tb, TranslationBlock *tb)
 
 int prolog_count = 0;
 
-#ifdef VAR_TGT
-void clear_ind_tgt(CPUX86State *env);
-#endif
 
 int cpu_exec(CPUState *env1)
 {
@@ -243,14 +223,6 @@ int cpu_exec(CPUState *env1)
 
     for(;;) {
         prolog_count++;
-
-#ifdef VAR_TGT
-        new_tb_count++;
-        if(new_tb_count >= 300) {
-            clear_ind_tgt(env1);
-            new_tb_count = 0;
-        }
-#endif
 
         tb = get_next_tb(env, env->eip, (TranslationBlock *)prev_tb);
 
