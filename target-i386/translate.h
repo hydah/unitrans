@@ -27,6 +27,10 @@
 	#define REG_MEM 2
 	#define MEM 3
 	#define REG 4 
+    #define INCL_RING(c)\
+    do {\
+        c = (c + 1) % 6;\
+    } while(0)
 #endif
 
 extern uint8_t *code_gen_ptr;
@@ -36,6 +40,8 @@ extern uint8_t *switch_case_buffer;
 extern uint8_t code_gen_prologue[];
 extern int prolog_count;
 extern int nb_tbs;
+extern int jmp_reg_tb;
+extern int nb_tb_jmp_reg;
 extern int nb_ind_tgt_nodes;
 extern TranslationBlock *tbs;
 

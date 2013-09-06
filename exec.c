@@ -59,6 +59,8 @@
 
 TranslationBlock *tbs;
 int nb_tbs;
+uint64_t jmp_reg_tb = 0;
+int nb_tb_jmp_reg = 0;
 
 ind_tgt_stat ind_tgt_nodes[IND_TGT_NODE_MAX];
 int nb_ind_tgt_nodes;
@@ -282,6 +284,12 @@ void tb_add_jmp_from(TranslationBlock *tb, TranslationBlock *next_tb, int n)
     next_tb->jmp_from[next_tb->jmp_from_index] = tb;
     next_tb->jmp_from_num[next_tb->jmp_from_index] = n;
     next_tb->jmp_from_index++;
+    if (next_tb->is_jmp_reg == 1 && next_tb->jmp_reg_mto == 0 && next_tb->jmp_from_index >= 2)
+    {
+        next_tb->jmp_reg_mto = 1;
+        nb_tb_jmp_reg++;
+    }
+        
     
     if(next_tb->jmp_from_index == TB_FROM_MAX) {
         next_tb->jmp_from_index = 0;
@@ -312,6 +320,11 @@ TranslationBlock *make_tb(CPUState *env, target_ulong pc,
     tb->insn_count = 0;
     tb->func_addr = func_addr;
     tb->tb_tag = tb_tag;
+
+    tb->is_jmp_reg = 0;
+    tb->jmp_reg_mto = 0;
+    tb->dynamic = 0;
+
     for(i = 0; i < PATCH_MAX; i++) {
         tb->tb_jmp_offset[i] = 0;
     }
@@ -319,8 +332,6 @@ TranslationBlock *make_tb(CPUState *env, target_ulong pc,
 #ifdef IND_OPT
     tb->jmp_ind_index = 0;
 	tb->ind_miss_count = 0;
-	tb->mru_src = 0;
-	tb->mru_dest = 0;
 	tb->ind_replace_count = 0;
     tb->retransed = false;
 #endif

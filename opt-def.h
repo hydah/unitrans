@@ -3,9 +3,11 @@
 
 #define SIEVE_OPT
 #define SEP_SIEVE
-//#define COUNT_PROF
+#define COUNT_PROF
 
+//#define DEBUG_MMAP
 #define SHA_RODATA
+//#define DEBUG_GHT
 #ifdef SHA_RODATA
     #define SWITCH_OPT
     #define PAGESIZE    4096

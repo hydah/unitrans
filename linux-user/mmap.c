@@ -407,19 +407,31 @@ abi_long target_mmap(abi_ulong start, abi_ulong len, int prot,
 
 #ifdef SHA_RODATA
 	extern uint8_t *sh_base;
+    extern uint8_t  num;
 	extern uint32_t ss_offset;
 	extern uint32_t srd_bounce;
 	extern uint8_t *sr_base;
+    extern uint32_t  seglen;
 	if (start == 0x08048000)
 	{
-		if ((sh_base = malloc(len + PAGESIZE)) == NULL)
-			abort();
-
+        seglen = len;
 		sr_base = start;
-		srd_bounce = (uint32_t)sr_base + len;
-		sh_base = GET_PAGE(sh_base) + PAGESIZE;
-		ss_offset = (uint32_t)sh_base -  start;
+        num = 1;
+        fprintf(stderr, "text segment start is %x, len is %x\n", start, len);
 	}
+    if (start != 0x08048000 && num == 1)
+    {
+        fprintf(stderr, "start is %x, len is %x\n", start, len);
+
+        seglen = seglen + len;
+		if ((sh_base = malloc(seglen + PAGESIZE)) == NULL)
+			abort();
+		srd_bounce = (uint32_t)sr_base + seglen;
+		sh_base = GET_PAGE(sh_base) + PAGESIZE;
+		ss_offset = (uint32_t)sh_base - (uint32_t)sr_base;
+        num = 2;
+    }
+
 #endif
 
     /* When mapping files into a memory area larger than the file, accesses
@@ -566,10 +578,10 @@ abi_long target_mmap(abi_ulong start, abi_ulong len, int prot,
         }
     }
 #ifdef SHA_RODATA
-	if (start == 0x08048000)
+	if (num == 2)
 	{
-		mprotect(sh_base, len, PROT_NONE);
-		fprintf(stderr, "code_page_num: %d\n", len / PAGESIZE);
+		mprotect(sh_base, seglen, PROT_NONE);
+		fprintf(stderr, "code_page_num: %d\n", seglen / PAGESIZE);
 	}
 #endif
  the_end1:

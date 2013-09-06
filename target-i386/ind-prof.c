@@ -429,6 +429,9 @@ static uint64_t find_static_max_hit(stat_node *node)
 static void calc_ind_hit(void)
 {
     uint64_t ind_count, ind_miss;
+    uint64_t sum;
+
+    sum = 0;
 
     ind_count = 0;
     ind_miss = 0;
@@ -453,6 +456,23 @@ static void calc_ind_hit(void)
 	fprintf(stderr, "opt_cind_nothit_count:%d\n", cgc->opt_cind_nothit_count);
 	fprintf(stderr, "cind opt_ratio:%s%%\n", 
 			calc_perc(cgc->opt_cind_dyn_count, cgc->cind_dyn_count));
+
+    fprintf(stderr, "jmp_reg_tb count: %d\n", jmp_reg_tb);
+    fprintf(stderr, "muti-entry jmp_reg_tb count: %d\n", nb_tb_jmp_reg);
+    fprintf(stderr, "muti-entry ratio: %s%%\n",
+            calc_perc(nb_tb_jmp_reg, jmp_reg_tb));
+    int i = 0;
+    for (i = 0; i < nb_tbs; i++)
+    {
+        if (tbs[i].is_jmp_reg == 1 && tbs[i].jmp_reg_mto == 1)
+        {
+            sum +=  tbs[i].dynamic;
+        }
+    }
+    fprintf(stderr, "dynamic muti-entry jmp_reg count: %u\n", sum);
+    fprintf(stderr, "dynamic muti-entry jmp_reg ratio: %s%%\n",
+            calc_perc(sum, cgc->jind_reg));
+
 }
 #endif
 

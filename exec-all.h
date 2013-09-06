@@ -167,6 +167,9 @@ struct TranslationBlock {
     struct TranslationBlock *jmp_from[TB_FROM_MAX];
     uint8_t jmp_from_num[TB_FROM_MAX]; /* */
     uint32_t jmp_from_index;
+    int is_jmp_reg;
+    int jmp_reg_mto;
+    uint32_t dynamic;
 
     uint32_t prof_pos;
 #ifdef IND_OPT
