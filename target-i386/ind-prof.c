@@ -680,7 +680,6 @@ void prof_stat(CPUX86State *env)
 
 #ifdef SHA_RODATA
     fprintf(stderr, "more than one entry tb: %d\n", nb_tb_jmp_reg);
-    fprintf(stderr, "suc cound: \t%llu\n", suc);
     fprintf(stderr, "shadow_opt_ind_count: \t%llu\n", cgc->opt_jind_dyn_count + cgc->opt_cind_dyn_count);
     fprintf(stderr, "shadow_opt_ind_rate: \t%s%%\n", 
                      calc_perc(cgc->opt_jind_dyn_count + cgc->opt_cind_dyn_count, cgc->jind_dyn_count + cgc->cind_dyn_count));

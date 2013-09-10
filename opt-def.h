@@ -7,12 +7,13 @@
 
 //#define DEBUG_MMAP
 #define SHA_RODATA
-#define DEBUG_SHA
 #ifdef SHA_RODATA
     #define SWITCH_OPT
     #define PAGESIZE    4096
     #define GET_PAGE(v) (((int)v) & (~(PAGESIZE -1)))
 #endif
+
+//#define DEBUG_SHA
 #ifdef DEBUG_SHA
 	#define SHA_DBG(...) fprintf(stderr, __VA_ARGS__);
 #else

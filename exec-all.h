@@ -193,6 +193,8 @@ struct TranslationBlock {
     uint32_t reg_content;
     uint8_t *shadow_code_start;
     uint32_t shadow_fail_count;
+    uint32_t shadow_bound[2];
+
 #endif
 
     ind_tgt_stat *ind_tgt;
