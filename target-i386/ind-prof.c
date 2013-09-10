@@ -294,7 +294,24 @@ void stat_tgt_add(TranslationBlock *tb, uint32_t src_addr, uint32_t tgt_addr)
         node->tgt_addr_hit[i] = 1;
         node->tgt_count++;
     }
+	/* add by heyu */
+#if 0 
+	if(node->src_addr == 0x80bd4ea
+		#if 1 
+		&& (node->tgt_dyn_count % 997) == 0
+		#endif
+		){
+		fprintf(fout, "%x %d\n", node->tgt_addr[i], i); 
+		fflush(fout);
+	}
+#endif
     stat_tgt_recent_th(tgt_addr, node, node->tgt_addr_hit[i]);
+#if 0
+    stat_tgt_recent_once(tgt_addr, node);
+    if(node->tgt_dyn_count == DPROF_THRESHOLD) {
+        sort_tgt(node);
+    }
+#endif
 }
 
 static bool path_match(uint32_t path1[], uint32_t path2[])
@@ -429,9 +446,6 @@ static uint64_t find_static_max_hit(stat_node *node)
 static void calc_ind_hit(void)
 {
     uint64_t ind_count, ind_miss;
-    uint64_t sum;
-
-    sum = 0;
 
     ind_count = 0;
     ind_miss = 0;
@@ -445,34 +459,6 @@ static void calc_ind_hit(void)
 #endif
     fprintf(stderr, "ind_hitrate: %s%%\n",
             calc_perc(ind_count - ind_miss, ind_count));
-	fprintf(stderr, "opt_jind_dyn_count: %llu\n", cgc->opt_jind_dyn_count);
-	fprintf(stderr, "opt_failed_jind_dyn_count: %d\n", cgc->opt_failed_jind_dyn_count);
-	fprintf(stderr, "opt_jind_nothit_count:%d\n", cgc->opt_jind_nothit_count);
-	fprintf(stderr, "jind opt_ratio:%s%%\n", 
-			calc_perc(cgc->opt_jind_dyn_count, cgc->jind_dyn_count));
-
-	fprintf(stderr, "opt_cind_dyn_count: %llu\n", cgc->opt_cind_dyn_count);
-	fprintf(stderr, "opt_failed_cind_dyn_count: %d\n", cgc->opt_failed_cind_dyn_count);
-	fprintf(stderr, "opt_cind_nothit_count:%d\n", cgc->opt_cind_nothit_count);
-	fprintf(stderr, "cind opt_ratio:%s%%\n", 
-			calc_perc(cgc->opt_cind_dyn_count, cgc->cind_dyn_count));
-
-    fprintf(stderr, "jmp_reg_tb count: %d\n", jmp_reg_tb);
-    fprintf(stderr, "muti-entry jmp_reg_tb count: %d\n", nb_tb_jmp_reg);
-    fprintf(stderr, "muti-entry ratio: %s%%\n",
-            calc_perc(nb_tb_jmp_reg, jmp_reg_tb));
-    int i = 0;
-    for (i = 0; i < nb_tbs; i++)
-    {
-        if (tbs[i].is_jmp_reg == 1 && tbs[i].jmp_reg_mto == 1)
-        {
-            sum +=  tbs[i].dynamic;
-        }
-    }
-    fprintf(stderr, "dynamic muti-entry jmp_reg count: %u\n", sum);
-    fprintf(stderr, "dynamic muti-entry jmp_reg ratio: %s%%\n",
-            calc_perc(sum, cgc->jind_reg));
-
 }
 #endif
 
@@ -643,6 +629,10 @@ void prof_stat(CPUX86State *env)
     fprintf(stderr, "j_ind: \t%d\n", cgc->j_ind_count);
     fprintf(stderr, "call: \t%d\n", cgc->call_count);
     fprintf(stderr, "call_ind: \t%d\n", cgc->call_ind_count);
+#ifdef SWITCH_OPT
+	fprintf(stderr, "switch-case_num: \t%u\n", sa_num);
+	fprintf(stderr, "call-table_num: \t%u\n", call_table);
+#endif
     fprintf(stderr, "ret: \t%d\n", cgc->ret_count);
     fprintf(stderr, "retIz: \t%d\n", cgc->retIw_count);
     fprintf(stderr, "direct_trans_count: \t%d\n", 
@@ -678,17 +668,36 @@ void prof_stat(CPUX86State *env)
     fprintf(stderr, "sv_miss_dyn: \t%u\n", cgc->sv_miss_count);
     fprintf(stderr, "sv_travel_dyn: \t%llu\n", cgc->sv_travel_count);
     fprintf(stderr, "jind_dyn: \t%llu\n", cgc->jind_dyn_count);
-    fprintf(stderr, "\tjind_disp_mem: \t%llu\n", cgc->jind_disp_mem);
-    fprintf(stderr, "\tjind_reg_mem: \t%llu\n", cgc->jind_reg_mem);
-    fprintf(stderr, "\tjind_mem: \t%llu\n", cgc->jind_mem);
-    fprintf(stderr, "\tjind_reg: \t%llu\n", cgc->jind_reg);
+    fprintf(stderr, "   jind_disp_mem: \t%llu\n", cgc->jind_disp_mem);
+    fprintf(stderr, "   jind_reg_mem: \t%llu\n", cgc->jind_reg_mem);
+    fprintf(stderr, "   jind_mem: \t\t%llu\n", cgc->jind_mem);
+    fprintf(stderr, "   jind_reg: \t\t%llu\n", cgc->jind_reg);
+    fprintf(stderr, "cind_dyn: \t%llu\n", cgc->cind_dyn_count);
+    fprintf(stderr, "   cind_disp_mem: \t%llu\n", cgc->cind_disp_mem);
+    fprintf(stderr, "   cind_reg_mem: \t%llu\n", cgc->cind_reg_mem);
+    fprintf(stderr, "   cind_mem: \t\t%llu\n", cgc->cind_mem);
+    fprintf(stderr, "   cind_reg: \t\t%llu\n", cgc->cind_reg);
 
-    fprintf(stderr, "cind_dyn: \t%llu\n", cgc->cind_dyn_count);
-    fprintf(stderr, "\tcind_disp_mem: \t%llu\n", cgc->cind_disp_mem);
-    fprintf(stderr, "\tcind_reg_mem: \t%llu\n", cgc->cind_reg_mem);
-    fprintf(stderr, "\tcind_mem: \t%llu\n", cgc->cind_mem);
-    fprintf(stderr, "\tcind_reg: \t%llu\n", cgc->cind_reg);
-    fprintf(stderr, "cind_dyn: \t%llu\n", cgc->cind_dyn_count);
+#ifdef SHA_RODATA
+    fprintf(stderr, "more than one entry tb: %d\n", nb_tb_jmp_reg);
+    fprintf(stderr, "suc cound: \t%llu\n", suc);
+    fprintf(stderr, "shadow_opt_ind_count: \t%llu\n", cgc->opt_jind_dyn_count + cgc->opt_cind_dyn_count);
+    fprintf(stderr, "shadow_opt_ind_rate: \t%s%%\n", 
+                     calc_perc(cgc->opt_jind_dyn_count + cgc->opt_cind_dyn_count, cgc->jind_dyn_count + cgc->cind_dyn_count));
+    fprintf(stderr, "shadow_opt_faild_ind_rate: \t%s%%\n", 
+                     calc_perc(cgc->opt_failed_jind_dyn_count + cgc->opt_failed_cind_dyn_count, cgc->jind_dyn_count + cgc->cind_dyn_count));
+#endif
+
+#if 0
+#ifdef SWITCH_OPT
+    fprintf(stderr, "switch_type_jind: \t%llu\n", cgc->switch_type_jind);
+    fprintf(stderr, "switch_type_jind_rate: \t%s%%\n", 
+                     calc_perc(cgc->switch_type_jind, cgc->jind_dyn_count));
+    fprintf(stderr, "switch_type_cind: \t%llu\n", cgc->switch_type_cind);
+    fprintf(stderr, "switch_type_cind_rate: \t%s%%\n", 
+                     calc_perc(cgc->switch_type_cind, cgc->jind_dyn_count));
+#endif
+#endif
 
 #ifdef J_IND_OPT
     fprintf(stderr, "jind_nothit: \t%llu\n", cgc->jind_nothit_count);

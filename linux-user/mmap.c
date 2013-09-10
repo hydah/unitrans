@@ -406,30 +406,31 @@ abi_long target_mmap(abi_ulong start, abi_ulong len, int prot,
     real_start = start & qemu_host_page_mask;
 
 #ifdef SHA_RODATA
-	extern uint8_t *sh_base;
-    extern uint8_t  num;
-	extern uint32_t ss_offset;
-	extern uint32_t srd_bounce;
-	extern uint8_t *sr_base;
-    extern uint32_t  seglen;
+extern uint8_t *text_base, *bss_base;
+extern uint8_t *text_sha_base, *bss_sha_base;
+extern uint32_t text_offset, bss_offset;
+extern uint32_t text_bound, bss_bound;
+extern int sha_flag;
+
 	if (start == 0x08048000)
 	{
-        seglen = len;
-		sr_base = start;
-        num = 1;
-        fprintf(stderr, "text segment start is %x, len is %x\n", start, len);
+        sha_flag = 0;
+		text_base = start;
+		text_bound = (uint32_t)text_base + len;
+        fprintf(stderr, "text_base is %x \n", text_base);
+        fprintf(stderr, "text_bound is %x \n", text_bound);
 	}
-    if (start != 0x08048000 && num == 1)
-    {
-        fprintf(stderr, "start is %x, len is %x\n", start, len);
-
-        seglen = seglen + len;
-		if ((sh_base = malloc(seglen + PAGESIZE)) == NULL)
+    sha_flag++;
+    if (sha_flag == 3) {
+		if ((text_sha_base = malloc(len + (uint32_t)text_bound - (uint32_t)text_base + PAGESIZE)) == NULL)
 			abort();
-		srd_bounce = (uint32_t)sr_base + seglen;
-		sh_base = GET_PAGE(sh_base) + PAGESIZE;
-		ss_offset = (uint32_t)sh_base - (uint32_t)sr_base;
-        num = 2;
+
+		bss_base = start;
+		bss_bound = (uint32_t)bss_base + len;
+	    text_sha_base = GET_PAGE(text_sha_base) + PAGESIZE;
+		text_offset = (uint32_t)text_sha_base - (uint32_t)text_base;
+        fprintf(stderr, "bss_base is %x \n", bss_base);
+        fprintf(stderr, "bss_bound is %x \n", bss_bound);
     }
 
 #endif
@@ -578,11 +579,10 @@ abi_long target_mmap(abi_ulong start, abi_ulong len, int prot,
         }
     }
 #ifdef SHA_RODATA
-	if (num == 2)
-	{
-		mprotect(sh_base, seglen, PROT_NONE);
-		fprintf(stderr, "code_page_num: %d\n", seglen / PAGESIZE);
+    if (sha_flag == 3) {
+		mprotect(text_sha_base, (uint32_t)bss_bound - (uint32_t)text_base, PROT_NONE);
 	}
+
 #endif
  the_end1:
     page_set_flags(start, start + len, prot | PAGE_VALID);

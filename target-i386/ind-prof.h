@@ -8,6 +8,7 @@
 
 extern bool prof_run;
 extern char *exec_path;
+extern uint32_t suc;
 
 int find_profile_node(TranslationBlock *tb);
 void write_profile_info(void);

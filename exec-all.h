@@ -167,9 +167,6 @@ struct TranslationBlock {
     struct TranslationBlock *jmp_from[TB_FROM_MAX];
     uint8_t jmp_from_num[TB_FROM_MAX]; /* */
     uint32_t jmp_from_index;
-    int is_jmp_reg;
-    int jmp_reg_mto;
-    uint32_t dynamic;
 
     uint32_t prof_pos;
 #ifdef IND_OPT
@@ -177,9 +174,6 @@ struct TranslationBlock {
 
     uint32_t jind_src_addr[IND_SLOT_MAX];
     uint32_t jind_dest_addr[IND_SLOT_MAX];
-	/* add for mru */
-	uint32_t mru_src;
-	uint32_t mru_dest;
     uint32_t jmp_ind;
     uint32_t jmp_ind_index;
     uint8_t *retrans_patch_ptr;
@@ -189,6 +183,17 @@ struct TranslationBlock {
     bool     retransed;
     uint32_t retrans_count;
     uint32_t retrans_count_max;
+#ifdef SHA_RODATA
+    int is_jmp_reg;
+    int jmp_reg_mto;
+
+    uint32_t reg;
+    uint32_t disp;
+    uint32_t scale;
+    uint32_t reg_content;
+    uint8_t *shadow_code_start;
+    uint32_t shadow_fail_count;
+#endif
 
     ind_tgt_stat *ind_tgt;
 #endif

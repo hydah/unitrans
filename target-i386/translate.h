@@ -178,15 +178,15 @@ typedef struct code_gen_context {
 	uint64_t jind_reg_mem;
 	uint64_t jind_mem;
 	uint64_t jind_reg;
-	uint64_t opt_jind_nothit_count;
+
 	uint64_t opt_jind_dyn_count;
-	uint64_t opt_failed_jind_dyn_count;
-	
+    uint64_t opt_failed_jind_dyn_count;
+
 	uint64_t cind_disp_mem;
 	uint64_t cind_reg_mem;
 	uint64_t cind_mem;
 	uint64_t cind_reg;
-	uint64_t opt_cind_nothit_count;
+
 	uint64_t opt_cind_dyn_count;
 	uint64_t opt_failed_cind_dyn_count;
 #endif

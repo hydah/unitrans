@@ -59,7 +59,6 @@
 
 TranslationBlock *tbs;
 int nb_tbs;
-uint64_t jmp_reg_tb = 0;
 int nb_tb_jmp_reg = 0;
 
 ind_tgt_stat ind_tgt_nodes[IND_TGT_NODE_MAX];
@@ -284,6 +283,8 @@ void tb_add_jmp_from(TranslationBlock *tb, TranslationBlock *next_tb, int n)
     next_tb->jmp_from[next_tb->jmp_from_index] = tb;
     next_tb->jmp_from_num[next_tb->jmp_from_index] = n;
     next_tb->jmp_from_index++;
+
+    /* record how many tbs has more than one entries */
     if (next_tb->is_jmp_reg == 1 && next_tb->jmp_reg_mto == 0 && next_tb->jmp_from_index >= 2)
     {
         next_tb->jmp_reg_mto = 1;
@@ -321,9 +322,10 @@ TranslationBlock *make_tb(CPUState *env, target_ulong pc,
     tb->func_addr = func_addr;
     tb->tb_tag = tb_tag;
 
+#ifdef SHA_RODATA
     tb->is_jmp_reg = 0;
     tb->jmp_reg_mto = 0;
-    tb->dynamic = 0;
+#endif
 
     for(i = 0; i < PATCH_MAX; i++) {
         tb->tb_jmp_offset[i] = 0;

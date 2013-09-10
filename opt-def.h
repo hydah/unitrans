@@ -7,16 +7,16 @@
 
 //#define DEBUG_MMAP
 #define SHA_RODATA
-//#define DEBUG_GHT
+#define DEBUG_SHA
 #ifdef SHA_RODATA
     #define SWITCH_OPT
     #define PAGESIZE    4096
     #define GET_PAGE(v) (((int)v) & (~(PAGESIZE -1)))
 #endif
-#ifdef DEBUG_GHT
-	#define GHT_DBG(...) fprintf(stderr, __VA_ARGS__);
+#ifdef DEBUG_SHA
+	#define SHA_DBG(...) fprintf(stderr, __VA_ARGS__);
 #else
-	#define GHT_DBG(...) ((void )0);
+	#define SHA_DBG(...) ((void )0);
 #endif
 #define J_IND_OPT
 #define CALL_IND_OPT
