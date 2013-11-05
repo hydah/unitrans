@@ -677,13 +677,8 @@ typedef struct CPUX86State {
     sieve_entry sieve_rettable[SIEVE_SIZE];
     sieve_entry sieve_jmptable[SIEVE_SIZE];
 #endif
-#ifdef SWITCH_OPT
-	sa_table direct_sa[SA_SIZE];
-	uint32_t direct_sa_num;
+
 	uint32_t sa_shadow;
-	uint32_t sa_base_entry;
-	uint8_t *sa_code_ptr;
-#endif
 
     uint32_t ind_dest;
     uint32_t ind_type;

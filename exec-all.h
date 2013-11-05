@@ -181,11 +181,6 @@ struct TranslationBlock {
     uint32_t jmp_ind_index;
     uint8_t *retrans_patch_ptr;
     uint8_t *ind_enter_sieve;
-#ifdef SWITCH_OPT
-	uint32_t sa_base;
-	uint32_t shadow_base;
-	uint32_t sa_entry_sum;
-#endif
 
     bool     has_ind;
     bool     retransed;

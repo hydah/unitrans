@@ -16,16 +16,18 @@
 #include "decode.h"
 #include "emit.h"
 
-#define CANNOT_OPT 0 
-#define CAN_OPT 1
+#ifdef SHA_RODATA
+	#define IS_JMP 0
+	#define IS_CALL 1
 
-#define DISP_MEM 3
-#define REG_MEM 4
-#define MEM 5
-#define REG 6 
-
-#define IS_CALL 7
-#define INITIAL 0
+	#define CANNOT_OPT 0 
+	#define CAN_OPT 1
+	
+	#define DISP_MEM 1 
+	#define REG_MEM 2
+	#define MEM 3
+	#define REG 4 
+#endif
 
 extern uint8_t *code_gen_ptr;
 extern uint8_t *code_gen_buffer;
@@ -163,18 +165,25 @@ typedef struct code_gen_context {
 
     uint64_t cind_nothit_count;
     uint64_t jind_nothit_count;
+    uint64_t jind_dyn_count;
+    uint64_t cind_dyn_count;
+#ifdef SHA_RODATA
+	uint64_t jind_disp_mem;
+	uint64_t jind_reg_mem;
+	uint64_t jind_mem;
+	uint64_t jind_reg;
 	uint64_t opt_jind_nothit_count;
-	/* for mru */
-	uint64_t jind_mru_hit_count;
-	uint64_t cind_mru_hit_count;
-	uint64_t mru_replace_count;
-
 	uint64_t opt_jind_dyn_count;
 	uint64_t opt_failed_jind_dyn_count;
-    uint64_t jind_dyn_count;
-	uint64_t switch_type_jind;
-	uint64_t switch_type_cind;
-    uint64_t cind_dyn_count;
+	
+	uint64_t cind_disp_mem;
+	uint64_t cind_reg_mem;
+	uint64_t cind_mem;
+	uint64_t cind_reg;
+	uint64_t opt_cind_nothit_count;
+	uint64_t opt_cind_dyn_count;
+	uint64_t opt_failed_cind_dyn_count;
+#endif
 #endif
     stat_node stat_nodes[STAT_NODE_MAX];
     uint32_t stat_node_count;

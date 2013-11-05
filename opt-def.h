@@ -7,6 +7,7 @@
 
 
 #define SHA_RODATA
+//#define DEBUG_GHT
 #ifdef SHA_RODATA
 	#define PAGESIZE    4096
 	#define GET_PAGE(v) (((int)v) & (~(PAGESIZE -1)))
@@ -25,7 +26,6 @@
 #define TGT_REP_EACH_TH	100000
 #define IND_TB_MAX	4096
 
-//#define MRU_OPT
 #define J_IND_OPT
 #define CALL_IND_OPT
 //#define RC_IND_OPT
@@ -70,7 +70,7 @@
     #define PROF_CIND
 #endif
 
-//#define COUNT_PROF
+#define COUNT_PROF
 #ifdef COUNT_PROF
     #ifdef J_IND_OPT
         #define PROF_JIND

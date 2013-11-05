@@ -23,20 +23,18 @@
 #include "ind-prof.h"
 #include <sys/mman.h>
 
-#ifdef SWITCH_OPT
+#ifdef SHA_RODATA
 sa_ptn *cur_ptn;
 uint8_t *sh_base;
 uint32_t ss_offset;
 uint32_t srd_bounce;
 uint8_t *sr_base;
-
-int sa_num = 0;
-int call_table = 0;
-#endif
-code_gen_context *cgc;
-TranslationBlock *cur_tb;
 uint8_t *segv_stub;
 static CPUX86State *g_env;
+#endif
+
+code_gen_context *cgc;
+TranslationBlock *cur_tb;
 FILE *fout;
 static void exit_stub(CPUX86State *env)
 {
@@ -51,11 +49,7 @@ static void cemit_exit_tb(CPUX86State *env, uint32_t ret_tb, uint32_t ind_type);
 
 /* add for switch case */
 static int judge_type(decode_t *tds, sa_ptn *ptn_ptr);
-void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr);
-bool emit_sa(CPUX86State *env, decode_t *ds);
-bool emit_call_table(CPUX86State *env, decode_t *ds);
-static int is_what(decode_t *tds);
-static uint32_t parse_sa(decode_t *tds);
+void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr, int type);
 
 #ifdef VAR_TGT
 static uint8_t *clear_ind_tgt_stub;
@@ -198,6 +192,8 @@ static inline void ret_cache_proc_init(CPUX86State *env)
     }
 }
 #endif
+
+#ifdef SHA_RODATA
 static void fill_page_with_int(uint8_t *page)
 {
 	int i;
@@ -230,14 +226,12 @@ static void sigsegv_handler(int sig_no, siginfo_t *info, void *ctx)
 	eip = cont->uc_mcontext.gregs[14];
 	mem_addr = info->si_addr;
 
-#if 0
-	fprintf(stderr, "*****this is %s*****\n", __FUNCTION__);
-	fprintf(stderr, "\tcc_ptr is %x\n", eip);
-	fprintf(stderr, "\tthe code is %d\n", info->si_code);
-	fprintf(stderr, "\tthe si_addr is %x\n", info->si_addr);
-	fprintf(stderr, "\tthe eax is %x\n", cont->uc_mcontext.gregs[11]);
-	fprintf(stderr, "\tthe esp is %x\n", cont->uc_mcontext.gregs[7]);
-#endif
+	GHT_DBG("*****this is %s*****\n", __FUNCTION__);
+	GHT_DBG("\tcc_ptr is %x\n", eip);
+	GHT_DBG("\tthe code is %d\n", info->si_code);
+	GHT_DBG("\tthe si_addr is %x\n", info->si_addr);
+	GHT_DBG("\tthe eax is %x\n", cont->uc_mcontext.gregs[11]);
+	GHT_DBG("\tthe esp is %x\n", cont->uc_mcontext.gregs[7]);
 
 	/* At first, this page's permition must be PROT_NONE, that is to say, it cann't be read.
 	 * When this page is accessed for the first time, this page's permition must be changed
@@ -297,7 +291,8 @@ void mysig_init(void)
 	act.sa_sigaction = sigsegv_handler;
 	sigaction(SIGSEGV, &act, NULL);
 }
-	
+#endif
+
 void codecache_prologue_init(CPUX86State *env)
 {
     int i;
@@ -306,14 +301,10 @@ void codecache_prologue_init(CPUX86State *env)
     cgc = (code_gen_context *)malloc(sizeof(code_gen_context));
     memset(cgc, 0, sizeof(code_gen_context));
 	
-#ifdef SWITCH_OPT
+#ifdef SHA_RODATA
 	cur_ptn = (sa_ptn *)malloc(sizeof(sa_ptn));
 	memset(cur_ptn, 0, sizeof(sa_ptn));
-	sa_num = 0;
-	call_table = 0;
 #endif
-
-	fout = fopen("/tmp/ind_profile.log", "w+");
 
     code_ptr = (uint8_t *)code_gen_prologue;
     addr = (uint32_t)&(env->regs[R_EAX]);
@@ -400,24 +391,10 @@ void codecache_prologue_init(CPUX86State *env)
     cemit_clear_ind_tgt(env);
 #endif
 
-#ifdef SWITCH_OPT
-	env->sa_code_ptr = switch_case_buffer;
-#endif
-
-#if 0
-	/*add by heyu */
-	segv_stub = malloc(4);
-	segv_stub = ((int)segv_stub & (~4095)) + 4096;
-	i = mprotect(segv_stub, 4, PROT_NONE);
-
-	fprintf(stderr, "i is %d\n", i);
-	fprintf(stderr, "segv_stub is %x\n", segv_stub);
-#endif
-
+#ifdef SHA_RODATA
 	mysig_init();
 	g_env = env;
-
-    //fprintf(stderr, "initial pc: 0x%x\n", env->eip);
+#endif
 
     make_tb(env, env->eip, env->eip, 0);
 }
@@ -1205,8 +1182,6 @@ static void cemit_ind_opt(CPUX86State *env, int m_ind_type)
 	/* add for mru */
 	uint32_t addr;
 	uint32_t *patch_addr_tmp;
-	uint32_t *patch_mru_src;
-	uint32_t *patch_mru_dest;
 
    // qemu_log("jind: pc:0x%x\n", cgc->pc_ptr - cgc->insn_len);
 
@@ -1226,10 +1201,6 @@ static void cemit_ind_opt(CPUX86State *env, int m_ind_type)
         code_emit8(env->code_ptr, 0x8d);
         code_emit8(env->code_ptr, 0x89); /* 10 001 001 */
         cur_tb->jind_src_addr[i] = (uint32_t)env->code_ptr;
-#ifdef MRU_OPT
-		if(i == IND_SLOT_MAX - 1)
-			patch_mru_src = (uint32_t)env->code_ptr;
-#endif
         code_emit32(env->code_ptr, -NEED_PATCH_32);
         /* jecxz equal */
         code_emit8(env->code_ptr, 0xe3);
@@ -1267,45 +1238,6 @@ static void cemit_ind_opt(CPUX86State *env, int m_ind_type)
     }
 #endif
 
-#if 0
-	/* add for every replacement */
-
-	addr = (uint32_t)(&cur_tb->jind_src_addr);
-	/* mov &cur_tb->jmp_ind_index, %ecx */
-	/* calculate ecx */
-	/* mov %ecx (&cur_tb->jmp_ind_index) */
-	/* leal (addr,%ecx,4), ecx */
-	/* mov %ecx, (&env->mru_src_addr) */
-    addr = (uint32_t)(&env->mru_src_addr);
-	code_emit8(env->code_ptr, 0xc7);
-    code_emit8(env->code_ptr, 0x05); /* ModRM = 00 000 101b */
-    code_emit32(env->code_ptr, addr);
-    code_emit32(env->code_ptr, (uint32_t)patch_mru_src);
-
-	addr = (uint32_t)(&cur_tb->jind_dest_addr);
-	/* mov &cur_tb->jmp_ind_index, %ecx */
-	/* leal (addr,%ecx,4), ecx */
-	/* mov %ecx, (&env->mru_dest_addr) */
-#endif
-	
-#ifdef MRU_OPT
-	/* add for mru */
-	/* mov patch_mru_src, (&env->mru_src_addr) */
-    addr = (uint32_t)(&env->mru_src_addr);
-	code_emit8(env->code_ptr, 0xc7);
-    code_emit8(env->code_ptr, 0x05); /* ModRM = 00 000 101b */
-    code_emit32(env->code_ptr, addr);
-    code_emit32(env->code_ptr, (uint32_t)patch_mru_src);
-
-	/* mov patch_mru_dest, (&env->mru_src_addr) */
-    addr = (uint32_t)(&env->mru_dest_addr);
-	code_emit8(env->code_ptr, 0xc7);
-    code_emit8(env->code_ptr, 0x05); /* ModRM = 00 000 101b */
-    code_emit32(env->code_ptr, addr);
-	patch_addr_tmp = env->code_ptr;
-    code_emit32(env->code_ptr, NEED_PATCH_32);
-#endif
-
     /* the size of exit_stub is larger than sieve_enter,
        so we can patch sieve_enter without reserve space */
     cur_tb->ind_enter_sieve = env->code_ptr;
@@ -1333,21 +1265,9 @@ static void cemit_ind_opt(CPUX86State *env, int m_ind_type)
         code_emit8(env->code_ptr, 0x64); /*01 100 100 */
         code_emit8(env->code_ptr, 0x24); /*10 100 100 */
         code_emit8(env->code_ptr, 4);
-#ifdef MRU_OPT
-		if (i == IND_SLOT_MAX - 1) {
-			 if(m_ind_type == IND_TYPE_JMP) {
-				 INCL_COUNT(jind_mru_hit_count);
-			 } else {
-				 INCL_COUNT(cind_mru_hit_count);
-			 }
-		}
-#endif
         /* jmp $TPC_i */
         code_emit8(env->code_ptr, 0xe9);
         cur_tb->jind_dest_addr[i] = (uint32_t)env->code_ptr;
-#ifdef MRU_OPT
-		if (i ==  IND_SLOT_MAX - 1) *patch_addr_tmp = (uint32_t)env->code_ptr;
-#endif
         code_emit32(env->code_ptr, NEED_PATCH_32);
     }
 }
@@ -1481,6 +1401,186 @@ bool emit_call_disp(CPUX86State *env, decode_t *ds)
     return trans_next(env, ds, false);
 }
 
+#ifdef SHA_RODATA
+static int judge_type(decode_t *tds, sa_ptn *ptn_ptr)
+{
+	if (*(tds->instr) == 0xff)
+	{
+		switch (tds->modrm.parts.mod)
+		{
+			case 0:// no displacement
+				if (tds->modrm.parts.rm == 4 && tds->sib.parts.base == 5)
+				{//base(,reg,scale)
+					ptn_ptr->flag = DISP_MEM;
+					ptn_ptr->scale = tds->sib.parts.ss;
+					ptn_ptr->reg = tds->sib.parts.index;
+					ptn_ptr->displacement = tds->displacement;
+					return CAN_OPT;
+				}
+				else if (tds->modrm.parts.rm == 5)
+				{//(mem)
+					ptn_ptr->flag = MEM;
+					ptn_ptr->scale = 0;
+					ptn_ptr->reg = tds->modrm.parts.rm; 
+					ptn_ptr->displacement = tds->displacement;
+					return CANNOT_OPT;
+				}
+				else if(tds->modrm.parts.rm !=4 && tds->modrm.parts.rm != 5)
+				{//(reg)
+					ptn_ptr->flag = REG_MEM;
+					ptn_ptr->scale = 0;
+					ptn_ptr->reg = tds->modrm.parts.rm; 
+					ptn_ptr->displacement = 0;
+					return CAN_OPT;
+				}
+				return CANNOT_OPT;
+			case 1://displacement 8bit
+				if (tds->modrm.parts.rm != 4)
+				{//disp(reg)
+					ptn_ptr->flag = REG_MEM;
+					ptn_ptr->scale = 0;
+					ptn_ptr->reg = tds->modrm.parts.rm; 
+					ptn_ptr->displacement = tds->displacement;
+					return CAN_OPT;
+				}
+				return CANNOT_OPT;
+
+			case 2://displacement 32bit
+				if (tds->modrm.parts.rm != 4)
+				{//disp(reg)
+					ptn_ptr->flag = REG_MEM;
+					ptn_ptr->scale = 0;
+					ptn_ptr->reg = tds->modrm.parts.rm; 
+					ptn_ptr->displacement = tds->displacement;
+					return CAN_OPT;
+				}
+				return CANNOT_OPT;
+			case 3://reg
+				ptn_ptr->flag = REG;
+				ptn_ptr->scale = -1;
+				ptn_ptr->reg = tds->modrm.parts.rm; 
+				ptn_ptr->displacement = 0;
+				return CANNOT_OPT;
+			default:
+				return CANNOT_OPT;
+		}
+	}
+
+	return CANNOT_OPT;
+}
+
+/* extra code size = 30(sieve) */
+/*first of all, handle jind's translation with rodata shadowing method
+ * assume that sh_base is the shadow rodata segtion's base address,
+ * sr_base is the source rodata segtion's base address, so ss_offset must be
+ * sh_base - sr_base.  srd_bounce is the upper bounce of the rodata segtion's adress range. 
+ */
+void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr, int type)
+{
+	GHT_DBG("*****this is %s*****\n", __FUNCTION__);
+	GHT_DBG("\tsh_base is %x\n", (uint32_t)sh_base);
+	GHT_DBG("\tsr_base is %x\n", (uint32_t)sr_base);
+	GHT_DBG("\tss_offset is %x\n", (uint32_t)ss_offset);
+	GHT_DBG("\tsrd_bounce is %x\n", (uint32_t)srd_bounce);
+
+	uint32_t displacement, scale, reg;
+	uint32_t a;
+	uint32_t addr;
+	uint32_t *patch_here;
+	int flag, upper;
+
+	scale = ptn_ptr->scale;
+	reg = ptn_ptr->reg;
+	displacement = ptn_ptr->displacement;
+	flag = ptn_ptr->flag;
+	upper = srd_bounce - displacement;
+
+	GHT_DBG("\treg is %x\n", reg);
+	GHT_DBG("\tsrc displacement is %x\n", displacement);
+	GHT_DBG("\tscale  is %d\n", scale);
+	GHT_DBG("\tupper is %d\n", upper);
+
+	upper = upper >> scale;
+	if (flag == MEM)
+	{
+		if (upper > 0)
+		{
+			if (type == IS_JMP)
+				INCL_COUNT(opt_jind_dyn_count);
+			else if (type == IS_CALL)
+				INCL_COUNT(opt_cind_dyn_count);
+
+			code_emit8(env->code_ptr, 0xff);
+			code_emit8(env->code_ptr, 0x25);
+			code_emit32(env->code_ptr, displacement + ss_offset);
+		}
+
+		if (type == IS_JMP)
+			INCL_COUNT(opt_failed_jind_dyn_count);
+		else if (type == IS_CALL)
+			INCL_COUNT(opt_failed_cind_dyn_count);
+		return;
+	}
+
+	/* pushf */
+	code_emit8(env->code_ptr, 0x9c); 
+	/* cmp reg, (srd-bounce - base) */
+	code_emit8(env->code_ptr, 0x81);
+	code_emit8(env->code_ptr, (0x1f << 3) + reg); /* 11 111 reg */
+	code_emit32(env->code_ptr, upper);
+
+	if (upper < 0)
+	{
+		/* jg patch-here //signed jump*/
+		code_emit8(env->code_ptr, 0x0f);
+		code_emit8(env->code_ptr, 0x8f);
+		patch_here = env->code_ptr;
+		code_emit32(env->code_ptr, NEED_PATCH_32);
+	}
+	else
+	{
+		/* jg patch-here //signed jump*/
+		code_emit8(env->code_ptr, 0x0f);
+		code_emit8(env->code_ptr, 0x83);
+		patch_here = env->code_ptr;
+		code_emit32(env->code_ptr, NEED_PATCH_32);
+	}
+
+	/* popf */
+	code_emit8(env->code_ptr, 0x9d);
+
+	if (type ==  IS_JMP)
+		INCL_COUNT(opt_jind_dyn_count);
+	else if (type == IS_CALL)
+		INCL_COUNT(opt_cind_dyn_count);
+
+	/* jmp *offset(,index,scale) */
+	/* offset =  displacement + ss_offset 
+	 * jump into the corresponding shadow rodata
+	 * */
+	if (flag == DISP_MEM)
+	{
+		code_emit8(env->code_ptr, 0xff);
+		code_emit8(env->code_ptr, 0x24);
+		code_emit8(env->code_ptr, (scale << 6) + (reg << 3) + 0x5);
+		code_emit32(env->code_ptr, displacement + ss_offset); 
+	}
+	else if (flag == REG_MEM)
+	{
+		code_emit8(env->code_ptr, 0xff);
+		code_emit8(env->code_ptr, (0xa << 4) + reg);
+		code_emit32(env->code_ptr, displacement + ss_offset);
+	}
+
+	//patch-here
+	*patch_here = (uint32_t)env->code_ptr - (uint32_t)patch_here - 4;
+	/* popf */
+	code_emit8(env->code_ptr, 0x9d);
+
+
+}
+#endif // end of SHA_RODATA
+
 /* extra code size = 23(rc_1) + 30(sieve) + 49(rc_2) = 102 */
 bool emit_call_near_mem(CPUX86State *env, decode_t *ds)
 {
@@ -1500,10 +1600,6 @@ bool emit_call_near_mem(CPUX86State *env, decode_t *ds)
 	fprintf(logfile, "\n");
 #endif
     uint32_t addr;
-	uint32_t retno;
-
-	sa_ptn cur_ptn, *ptn_ptr = &cur_ptn;
-
 	cgc->call_ind_count++;
 
 	INCL_COUNT(cind_dyn_count);
@@ -1527,16 +1623,29 @@ bool emit_call_near_mem(CPUX86State *env, decode_t *ds)
 	code_emit8(env->code_ptr, 0x68u);     /* PUSH */
 	code_emit32(env->code_ptr, cgc->pc_ptr);
 
+#ifdef SHA_RODATA 
+	uint32_t retno;
+
+	sa_ptn cur_ptn, *ptn_ptr = &cur_ptn;
 
 	memset(ptn_ptr, 0, sizeof(sa_ptn));
 
 	retno = judge_type(ds, ptn_ptr);
 
-#if 1 
+	if (ptn_ptr->flag == DISP_MEM)
+		INCL_COUNT(cind_disp_mem);
+	else if (ptn_ptr->flag == MEM)
+		INCL_COUNT(cind_mem);
+	else if (ptn_ptr->flag == REG_MEM)
+		INCL_COUNT(cind_reg_mem);
+	else if (ptn_ptr->flag == REG)
+		INCL_COUNT(cind_reg);
+
 	if (retno == CAN_OPT)
 	{
-		shadow_translate(env, ds, ptn_ptr);
+		shadow_translate(env, ds, ptn_ptr, IS_CALL);
 	}
+	INCL_COUNT(opt_failed_cind_dyn_count);
 #endif
 
 	/* Push (dest) */
@@ -1818,186 +1927,6 @@ bool emit_jmp(CPUX86State *env, decode_t *ds)
     return false;
 }
 
-static int judge_type(decode_t *tds, sa_ptn *ptn_ptr)
-{
-	/*if(*(tds->instr) == 0xff && tds->modrm.parts.mod == 3 && 
-		cur_ptn->flag == IS_MOV && tds->modrm.parts.rm == cur_ptn->reg)
-		return IS_JMP_DISP_MEM;
-	*/
-	if (*(tds->instr) == 0xff)
-	{
-		switch (tds->modrm.parts.mod)
-		{
-			case 0:// no displacement
-				if (tds->modrm.parts.rm == 4 && tds->sib.parts.base == 5)
-				{//base(,reg,scale)
-					ptn_ptr->flag = DISP_MEM;
-					ptn_ptr->scale = tds->sib.parts.ss;
-					ptn_ptr->reg = tds->sib.parts.index;
-					ptn_ptr->displacement = tds->displacement;
-					return CAN_OPT;
-				}
-#if 1
-				else if (tds->modrm.parts.rm == 5)
-				{//(mem)
-					ptn_ptr->flag = MEM;
-					ptn_ptr->scale = 0;
-					ptn_ptr->reg = tds->modrm.parts.rm; 
-					ptn_ptr->displacement = tds->displacement;
-					return CANNOT_OPT;
-				}
-				else if(tds->modrm.parts.rm !=4 && tds->modrm.parts.rm != 5)
-				{//(reg)
-					ptn_ptr->flag = REG_MEM;
-					ptn_ptr->scale = 0;
-					ptn_ptr->reg = tds->modrm.parts.rm; 
-					ptn_ptr->displacement = 0;
-					return CAN_OPT;
-				}
-				return CANNOT_OPT;
-			case 1://displacement 8bit
-				if (tds->modrm.parts.rm != 4)
-				{//disp(reg)
-					ptn_ptr->flag = REG_MEM;
-					ptn_ptr->scale = 0;
-					ptn_ptr->reg = tds->modrm.parts.rm; 
-					ptn_ptr->displacement = tds->displacement;
-					return CAN_OPT;
-				}
-				return CANNOT_OPT;
-
-			case 2://displacement 32bit
-				if (tds->modrm.parts.rm != 4)
-				{//disp(reg)
-					ptn_ptr->flag = REG_MEM;
-					ptn_ptr->scale = 0;
-					ptn_ptr->reg = tds->modrm.parts.rm; 
-					ptn_ptr->displacement = tds->displacement;
-					return CAN_OPT;
-				}
-				return CANNOT_OPT;
-			case 3://reg
-				ptn_ptr->flag = REG;
-				ptn_ptr->scale = -1;
-				ptn_ptr->reg = tds->modrm.parts.rm; 
-				ptn_ptr->displacement = 0;
-				return CANNOT_OPT;
-#endif
-			default:
-				return CANNOT_OPT;
-		}
-	}
-
-	return CANNOT_OPT;
-}
-
-/* extra code size = 30(sieve) */
-/*first of all, handle jind's translation with rodata shadowing method
- * assume that sh_base is the shadow rodata segtion's base address,
- * sr_base is the source rodata segtion's base address, so ss_offset must be
- * sh_base - sr_base.  srd_bounce is the upper bounce of the rodata segtion's adress range. 
- */
-void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr)
-{
-#if 0
-	fprintf(stderr, "*****this is %s*****\n", __FUNCTION__);
-	fprintf(stderr, "\tsh_base is %x\n", (uint32_t)sh_base);
-	fprintf(stderr, "\tsr_base is %x\n", (uint32_t)sr_base);
-	fprintf(stderr, "\tss_offset is %x\n", (uint32_t)ss_offset);
-	fprintf(stderr, "\tsrd_bounce is %x\n", (uint32_t)srd_bounce);
-#endif
-
-	uint32_t displacement, scale, reg;
-	uint32_t a;
-	uint32_t addr;
-	uint32_t *patch_here;
-	int flag, upper;
-
-	scale = ptn_ptr->scale;
-	reg = ptn_ptr->reg;
-	displacement = ptn_ptr->displacement;
-	flag = ptn_ptr->flag;
-#if 0
-	fprintf(stderr, "\treg is %x\n", reg);
-	fprintf(stderr, "\tsrc displacement is %x\n", displacement);
-	fprintf(stderr, "\tscale  is %d\n", scale);
-#endif
-
-	/* calculate upper according to type */
-	upper = srd_bounce - displacement;
-	//fprintf(stderr, "\tupper is %d\n", upper);
-	upper = upper >> scale;
-
-
-	if (flag == MEM)
-	{
-		if (upper > 0)
-		{
-			INCL_COUNT(opt_jind_dyn_count);
-
-			code_emit8(env->code_ptr, 0xff);
-			code_emit8(env->code_ptr, 0x25);
-			code_emit32(env->code_ptr, displacement + ss_offset);
-		}
-
-		INCL_COUNT(opt_failed_jind_dyn_count);
-		return;
-	}
-
-	/* pushf */
-	code_emit8(env->code_ptr, 0x9c); 
-	/* cmp reg, (srd-bounce - base) */
-	code_emit8(env->code_ptr, 0x81);
-	code_emit8(env->code_ptr, (0x1f << 3) + reg); /* 11 111 reg */
-	code_emit32(env->code_ptr, upper);
-
-	if (upper < 0)
-	{
-		/* jg patch-here //signed jump*/
-		code_emit8(env->code_ptr, 0x0f);
-		code_emit8(env->code_ptr, 0x8f);
-		patch_here = env->code_ptr;
-		code_emit32(env->code_ptr, NEED_PATCH_32);
-	}
-	else
-	{
-		/* jg patch-here //signed jump*/
-		code_emit8(env->code_ptr, 0x0f);
-		code_emit8(env->code_ptr, 0x83);
-		patch_here = env->code_ptr;
-		code_emit32(env->code_ptr, NEED_PATCH_32);
-	}
-
-	/* popf */
-	code_emit8(env->code_ptr, 0x9d);
-
-	INCL_COUNT(opt_jind_dyn_count);
-	/* jmp *offset(,index,scale) */
-	/* offset =  displacement + ss_offset 
-	 * jump into the corresponding shadow rodata
-	 * */
-	if (flag == DISP_MEM)
-	{
-		code_emit8(env->code_ptr, 0xff);
-		code_emit8(env->code_ptr, 0x24);
-		code_emit8(env->code_ptr, (scale << 6) + (reg << 3) + 0x5);
-		code_emit32(env->code_ptr, displacement + ss_offset); 
-	}
-	else if (flag == REG_MEM)
-	{
-		code_emit8(env->code_ptr, 0xff);
-		code_emit8(env->code_ptr, (0xa << 4) + reg);
-		code_emit32(env->code_ptr, displacement + ss_offset);
-	}
-
-	//patch-here
-	*patch_here = (uint32_t)env->code_ptr - (uint32_t)patch_here - 4;
-	/* popf */
-	code_emit8(env->code_ptr, 0x9d);
-
-	INCL_COUNT(opt_failed_jind_dyn_count);
-}
-
 bool emit_jmp_near_mem(CPUX86State *env, decode_t *ds)
 {
 #ifdef aDEBUG_DISAS
@@ -2015,10 +1944,13 @@ bool emit_jmp_near_mem(CPUX86State *env, decode_t *ds)
 	fprintf(logfile, "ds->immediate is %x\n", ds->immediate);
 	fprintf(logfile, "\n");
 #endif
+    uint32_t addr;
 		
 	cgc->j_ind_count++;
 		
 	INCL_COUNT(jind_dyn_count);
+
+#ifdef SHA_RODATA 
 	/* first, at the translation period,judge if the instuction's patten is jmp *disp(,reg,scale) or not
 	 * if it is, then translate this instruction with rodata shadowing method,
 	 * or go with the common method.
@@ -2027,19 +1959,26 @@ bool emit_jmp_near_mem(CPUX86State *env, decode_t *ds)
 	 * if all the condition above are satisfied, translate this instruction with rodata shadowing method.
 	 */
 
-    uint32_t addr;
 	uint32_t retno;
 	sa_ptn cur_ptn, *ptn_ptr = &cur_ptn;
-
 	memset(ptn_ptr, 0, sizeof(sa_ptn));
 
 	retno = judge_type(ds, ptn_ptr);
 
-#if 1 
+	if (ptn_ptr->flag == DISP_MEM)
+		INCL_COUNT(jind_disp_mem);
+	else if (ptn_ptr->flag == MEM)
+		INCL_COUNT(jind_mem);
+	else if (ptn_ptr->flag == REG_MEM)
+		INCL_COUNT(jind_reg_mem);
+	else if (ptn_ptr->flag == REG)
+		INCL_COUNT(jind_reg);
+
 	if (retno == CAN_OPT)
 	{
-		shadow_translate(env, ds, ptn_ptr);
+		shadow_translate(env, ds, ptn_ptr, IS_JMP);
 	}
+	INCL_COUNT(opt_failed_jind_dyn_count);
 #endif
 	
 
@@ -2363,332 +2302,4 @@ static void cemit_count_each_tb_ind_miss(CPUX86State *env, TranslationBlock *tb)
            "out of sieve buffer\n");
 
 }
-#endif
-
-#if 0
-#ifdef SWITCH_OPT
-bool emit_sa(CPUX86State *env, decode_t *ds)
-{
-	uint32_t addr;
-	uint32_t *addr_ptr;
-	uint32_t shadow_base;
-	uint32_t shadow_end;
-	uint8_t *patch_addr;
-	uint32_t jmp_offset;
-	//fprintf(stderr, "the displacement is \t%x\n", cur_ptn->displacement);
-
-    cgc->j_ind_count++;
-    ADD_INSNS_COUNT(cgc->insn_dyn_count, cur_tb->insn_count + 1);
-    INCL_COUNT(jind_dyn_count);
-    INCL_COUNT(switch_type_jind);
-
-#ifdef PROF_JIND
-    cemit_ind_count(env, ds);
-#endif
-#if 1 
-    PUSH_PATH(env, true);
-
-
-    /* mov func_addr, (&env->ind_dest) */
-    addr = (uint32_t)&(env->ind_dest);
-    code_emit8(env->code_ptr, 0xc7);
-    code_emit8(env->code_ptr, 0x05); /* ModRM = 00 000 101b */
-    code_emit32(env->code_ptr, addr);
-    code_emit32(env->code_ptr, (uint32_t)cur_tb->func_addr);
-#endif
-
-	/* find shadow switch case table */
-	shadow_base = (uint32_t)env->sa_code_ptr;
-	env->sa_code_ptr = env->sa_code_ptr + cur_ptn->t_sum * 4;
-
-	/* setup cur_tb->sa_base, cur_tb->shadow_base, cur_tb->sa_sum;*/
-	cur_tb->sa_base = cur_ptn->displacement;
-	cur_tb->shadow_base = shadow_base;
-	cur_tb->sa_entry_sum = cur_ptn->t_sum;
-
-	/* jmp *displacement(,index,scale) */
-	code_emit8(env->code_ptr, 0xff);
-	code_emit8(env->code_ptr, 0x24);
-	code_emit8(env->code_ptr, (cur_ptn->scale << 6) + (cur_ptn->reg << 3) + 0x5);
-	code_emit32(env->code_ptr, shadow_base); 
-	
-	patch_addr = env->code_ptr;
-
-	INCL_COUNT(jind_nothit_count);
-
-	/* initial shadow table */
-	addr_ptr = (uint32_t *)shadow_base;
-	shadow_end = shadow_base +  cur_ptn->t_sum * 4;
-	while (addr_ptr < shadow_end)
-	{
-		*addr_ptr = (uint32_t) patch_addr;
-		addr_ptr++;
-	}
-	
-	/* jump back when predicting miss */
-	uint8_t  regs;
-	if (cur_ptn->reg == 0x1)
-		regs = 0x0;
-	else
-		regs = 0x1;
-    /* push regs */
-	code_emit8(env->code_ptr, (0x5 << 4) + regs);
-
-	/* movl base(, index, scale), regs */
-	code_emit8(env->code_ptr, 0x8b);
-	code_emit8(env->code_ptr, (regs << 3) + 0x4);
-	code_emit8(env->code_ptr, (cur_ptn->scale << 6) + (cur_ptn->reg << 3) + 0x5);
-	code_emit32(env->code_ptr, cur_ptn->displacement);
-	
-	/* movl regs, (&env->eip) */
-	addr = (uint32_t) &(env->eip);
-	code_emit8(env->code_ptr, 0x89);
-	code_emit8(env->code_ptr, (regs << 3) + 0x5);
-	code_emit32(env->code_ptr, addr);
-
-	/* movl $ret_tb, (ret_tb) */
-	addr = (uint32_t)&(env->ret_tb);
-	code_emit8(env->code_ptr, 0xc7);
-	code_emit8(env->code_ptr, 0x05); /* ModRM = 00 000 101b */
-	code_emit32(env->code_ptr, addr);
-	code_emit32(env->code_ptr, (uint32_t)cur_tb);
-
- 
-	/* leal shadow(,index,scale), regs */
-	code_emit8(env->code_ptr, 0x8d);
-	code_emit8(env->code_ptr, (regs << 3) + 0x4);
-	code_emit8(env->code_ptr, (cur_ptn->scale << 6) + (cur_ptn->reg << 3) + 0x5);
-	code_emit32(env->code_ptr, shadow_base);
-
-	addr = (uint32_t)&(env->sa_shadow);
-	/* mov regs, (&env->sa_shadow) */
-	code_emit8(env->code_ptr, 0x89);
-	code_emit8(env->code_ptr, (regs << 3) + 0x5);
-	code_emit32(env->code_ptr, addr);
-
-	/* mov m_ind_type, (&env->ind_type) */
-	addr = (uint32_t)&(env->ind_type);
-	code_emit8(env->code_ptr, 0xc7);
-	code_emit8(env->code_ptr, 0x05); /* ModRM = 00 000 101b */
-	code_emit32(env->code_ptr, addr);
-	code_emit32(env->code_ptr, IND_TYPE_CALL);
-
-	/* pop %ecx */
-	code_emit8(env->code_ptr, (0xb << 3) + regs);
-
-    /* jmp tb_epilogue */
-    code_emit8(env->code_ptr, 0xe9u);
-    jmp_offset = cgc->tb_ret_addr - env->code_ptr - 4;
-    code_emit32(env->code_ptr, jmp_offset);
-	
-
-
-	cur_ptn->flag = INITIAL;
-	cur_ptn->reg = 0;
-	cur_ptn->displacement = 0;
-
-	return false;
-}
-
-bool emit_call_table(CPUX86State *env, decode_t *ds)
-{
-	uint32_t addr;
-	uint32_t *addr_ptr;
-	uint32_t shadow_base;
-	uint32_t shadow_end;
-	uint8_t *patch_addr;
-	uint32_t jmp_offset;
-	//fprintf(stderr, "the displacement is \t%x\n", cur_ptn->displacement);
-    cgc->call_ind_count++;
-
-    ADD_INSNS_COUNT(cgc->insn_dyn_count, cur_tb->insn_count + 1);
-    INCL_COUNT(cind_dyn_count);
-    INCL_COUNT(switch_type_cind);
-
-#ifdef PROF_JIND
-    cemit_ind_count(env, ds);
-#endif
-
-
-
-	/* find shadow switch case table */
-	shadow_base = (uint32_t)env->sa_code_ptr;
-	env->sa_code_ptr = env->sa_code_ptr +  cur_ptn->t_sum * 4;
-
-	/* setup cur_tb->sa_base, cur_tb->shadow_base, cur_tb->sa_sum;*/
-	cur_tb->sa_base = cur_ptn->displacement;
-	cur_tb->shadow_base = shadow_base;
-	cur_tb->sa_entry_sum = cur_ptn->t_sum;
-
-#if 1 
-    /* push next insn */
-    code_emit8(env->code_ptr, 0x68);
-    code_emit32(env->code_ptr, cgc->pc_ptr);
-
-	/* jmp *displacement(,index,scale) */
-	code_emit8(env->code_ptr, 0xff);
-	code_emit8(env->code_ptr, 0x24);
-	code_emit8(env->code_ptr, (cur_ptn->scale << 6) + (cur_ptn->reg << 3) + 0x5);
-	code_emit32(env->code_ptr, shadow_base); 
-	
-	patch_addr = env->code_ptr;
-
-	INCL_COUNT(cind_nothit_count);
-
-	/* initial shadow table */
-	addr_ptr = (uint32_t *)shadow_base;
-	shadow_end = shadow_base +  cur_ptn->t_sum * 4;
-	while (addr_ptr < shadow_end)
-	{
-		*addr_ptr = (uint32_t) patch_addr;
-		addr_ptr++;
-	}
-	
-	/* jump back when predicting miss */
-
-    /* push %ecx */
-    code_emit8(env->code_ptr, 0x51);
-
-	/* movl base(, index, scale), %ecx */
-	code_emit8(env->code_ptr, 0x8b);
-	code_emit8(env->code_ptr, 0x0c); /* 00 001 100 */
-	code_emit8(env->code_ptr, (cur_ptn->scale << 6) + (cur_ptn->reg << 3) + 0x5);
-	code_emit32(env->code_ptr, cur_ptn->displacement);
-	
-	/* movl %ecx, (&env->eip) */
-	addr = (uint32_t) &(env->eip);
-	code_emit8(env->code_ptr, 0x89);
-	code_emit8(env->code_ptr, 0x0d);
-	code_emit32(env->code_ptr, addr);
-
-	/* movl $ret_tb, (ret_tb) */
-	addr = (uint32_t)&(env->ret_tb);
-	code_emit8(env->code_ptr, 0xc7);
-	code_emit8(env->code_ptr, 0x05); /* ModRM = 00 000 101b */
-	code_emit32(env->code_ptr, addr);
-	code_emit32(env->code_ptr, (uint32_t)cur_tb);
-
-	/* pop %ecx */
-	code_emit8(env->code_ptr, 0x59);
-    /* push %ecx */
-    code_emit8(env->code_ptr, 0x51);
-	/* leal shadow(,index,scale), %ecx */
-	code_emit8(env->code_ptr, 0x8d);
-	code_emit8(env->code_ptr, 0x0c);
-	code_emit8(env->code_ptr, (cur_ptn->scale << 6) + (cur_ptn->reg << 3) + 0x5);
-	code_emit32(env->code_ptr, shadow_base);
-
-	addr = (uint32_t)&(env->sa_shadow);
-	/* mov %ecx, (&env->sa_shadow) */
-	code_emit8(env->code_ptr, 0x89);
-	code_emit8(env->code_ptr, 0x0d);
-	code_emit32(env->code_ptr, addr);
-
-	/* mov m_ind_type, (&env->ind_type) */
-	addr = (uint32_t)&(env->ind_type);
-	code_emit8(env->code_ptr, 0xc7);
-	code_emit8(env->code_ptr, 0x05); /* ModRM = 00 000 101b */
-	code_emit32(env->code_ptr, addr);
-	code_emit32(env->code_ptr, IND_TYPE_CALL);
-
-	/* pop %ecx */
-	code_emit8(env->code_ptr, 0x59);
-
-    /* jmp tb_epilogue */
-    code_emit8(env->code_ptr, 0xe9u);
-    jmp_offset = cgc->tb_ret_addr - env->code_ptr - 4;
-    code_emit32(env->code_ptr, jmp_offset);
-#endif
-
-
-	cur_ptn->flag = INITIAL;
-	cur_ptn->reg = 0;
-	cur_ptn->displacement = 0;
-
-	return false;
-}
-static int is_what(decode_t *tds)
-{
-	if(*(tds->instr) == 0x8b && tds->modrm.parts.mod == 2)
-	{
-		cur_ptn->scale = 0x0;
-		cur_ptn->reg = tds->modrm.parts.reg;
-		//cur_ptn->scale = 0x0;
-		cur_ptn->displacement = tds->displacement;
-		return IS_MOV;
-	}
-	else if(*(tds->instr) == 0xff && tds->modrm.parts.mod == 3 && 
-		cur_ptn->flag == IS_MOV && tds->modrm.parts.rm == cur_ptn->reg)
-		return IS_JMP;
-
-	/*ff 24 95 f0 84 04 08    jmp    *0x80484f0(,%edx,4) */
-	else if(*(tds->instr) == 0xff && tds->modrm.parts.mod == 0 &&
-		tds->modrm.parts.rm == 4 &&	tds->sib.parts.base == 5) 
-	{	/* must eliminate the call instructions */
-
-		cur_ptn->scale = tds->sib.parts.ss;
-		cur_ptn->reg = tds->sib.parts.index;
-		cur_ptn->displacement = tds->displacement;
-		if (tds->modrm.parts.reg == 2)
-			return IS_CALL;
-		else if (tds->modrm.parts.reg == 4 || tds->modrm.parts.reg == 5)
-			return IS_JMP;
-	}
-	
-	return INITIAL;
-
-}
-
-static uint32_t parse_sa(decode_t *tds)
-{
-	int ret;
-	uint32_t t_sum;
-	uint32_t *addr_ptr;
-
-	ret = is_what(tds);
-
-	cur_ptn->flag = ret;
-
-
-	if(cur_ptn->flag == IS_JMP)
-	{
-		addr_ptr = (uint32_t *) cur_ptn->displacement;
-		t_sum = 0;
-
-		while (*addr_ptr < 0x9000000 && *addr_ptr > 0x8000000)
-		{
-			addr_ptr++;
-			t_sum++;
-		}
-		cur_ptn->t_sum = t_sum;
-		if (t_sum > 0)
-		{	
-			sa_num++;
-			tds->emitfn = emit_sa;
-			return IS_JMP;
-		}
-	}
-	else if (cur_ptn->flag == IS_CALL)
-	{
-		addr_ptr = (uint32_t *) cur_ptn->displacement;
-		t_sum = 0;
-
-		while (*addr_ptr < 0xa000000 && *addr_ptr > 0x7000000)
-		{
-
-			addr_ptr++;
-			t_sum++;
-		}
-		if (t_sum > 0)
-		{
-			cur_ptn->t_sum = t_sum;
-			cur_ptn->t_sum = 400;
-			call_table++;
-		//	tds->emitfn = emit_call_table;
-			return IS_CALL;
-		}
-	}
-	return INITIAL;
-}
-#endif
 #endif

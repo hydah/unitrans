@@ -294,24 +294,7 @@ void stat_tgt_add(TranslationBlock *tb, uint32_t src_addr, uint32_t tgt_addr)
         node->tgt_addr_hit[i] = 1;
         node->tgt_count++;
     }
-	/* add by heyu */
-#if 0 
-	if(node->src_addr == 0x80bd4ea
-		#if 1 
-		&& (node->tgt_dyn_count % 997) == 0
-		#endif
-		){
-		fprintf(fout, "%x %d\n", node->tgt_addr[i], i); 
-		fflush(fout);
-	}
-#endif
     stat_tgt_recent_th(tgt_addr, node, node->tgt_addr_hit[i]);
-#if 0
-    stat_tgt_recent_once(tgt_addr, node);
-    if(node->tgt_dyn_count == DPROF_THRESHOLD) {
-        sort_tgt(node);
-    }
-#endif
 }
 
 static bool path_match(uint32_t path1[], uint32_t path2[])
@@ -459,19 +442,17 @@ static void calc_ind_hit(void)
 #endif
     fprintf(stderr, "ind_hitrate: %s%%\n",
             calc_perc(ind_count - ind_miss, ind_count));
-	/* add for mru */
-	fprintf(stderr, "mru_replace_count: %d\n", cgc->mru_replace_count);
-	fprintf(stderr, "mru_conversion_ratio: %s%%\n",
-            calc_perc(cgc->jind_mru_hit_count + cgc->cind_mru_hit_count, cgc->mru_replace_count));
-	fprintf(stderr, "mru_hit_rate: %s%%\n",
-            calc_perc(cgc->jind_mru_hit_count + cgc->cind_mru_hit_count, ind_count));
-	fprintf(stderr, "jind_mru_hit_count: %d\n", cgc->jind_mru_hit_count);
-	fprintf(stderr, "cind_mru_hit_count: %d\n", cgc->cind_mru_hit_count);
 	fprintf(stderr, "opt_jind_dyn_count: %llu\n", cgc->opt_jind_dyn_count);
 	fprintf(stderr, "opt_failed_jind_dyn_count: %d\n", cgc->opt_failed_jind_dyn_count);
 	fprintf(stderr, "opt_jind_nothit_count:%d\n", cgc->opt_jind_nothit_count);
-	fprintf(stderr, "opt_ratio:%s%%\n", 
+	fprintf(stderr, "jind opt_ratio:%s%%\n", 
 			calc_perc(cgc->opt_jind_dyn_count, cgc->jind_dyn_count));
+
+	fprintf(stderr, "opt_cind_dyn_count: %llu\n", cgc->opt_cind_dyn_count);
+	fprintf(stderr, "opt_failed_cind_dyn_count: %d\n", cgc->opt_failed_cind_dyn_count);
+	fprintf(stderr, "opt_cind_nothit_count:%d\n", cgc->opt_cind_nothit_count);
+	fprintf(stderr, "cind opt_ratio:%s%%\n", 
+			calc_perc(cgc->opt_cind_dyn_count, cgc->cind_dyn_count));
 }
 #endif
 
@@ -640,10 +621,6 @@ void prof_stat(CPUX86State *env)
     fprintf(stderr, "j_ind: \t%d\n", cgc->j_ind_count);
     fprintf(stderr, "call: \t%d\n", cgc->call_count);
     fprintf(stderr, "call_ind: \t%d\n", cgc->call_ind_count);
-#ifdef SWITCH_OPT
-	fprintf(stderr, "switch-case_num: \t%u\n", sa_num);
-	fprintf(stderr, "call-table_num: \t%u\n", call_table);
-#endif
     fprintf(stderr, "ret: \t%d\n", cgc->ret_count);
     fprintf(stderr, "retIz: \t%d\n", cgc->retIw_count);
     fprintf(stderr, "direct_trans_count: \t%d\n", 
@@ -679,13 +656,16 @@ void prof_stat(CPUX86State *env)
     fprintf(stderr, "sv_miss_dyn: \t%u\n", cgc->sv_miss_count);
     fprintf(stderr, "sv_travel_dyn: \t%llu\n", cgc->sv_travel_count);
     fprintf(stderr, "jind_dyn: \t%llu\n", cgc->jind_dyn_count);
-    fprintf(stderr, "switch_type_jind: \t%llu\n", cgc->switch_type_jind);
-    fprintf(stderr, "switch_type_jind_rate: \t%s%%\n", 
-                     calc_perc(cgc->switch_type_jind, cgc->jind_dyn_count));
+    fprintf(stderr, "\tjind_disp_mem: \t%llu\n", cgc->jind_disp_mem);
+    fprintf(stderr, "\tjind_reg_mem: \t%llu\n", cgc->jind_reg_mem);
+    fprintf(stderr, "\tjind_mem: \t%llu\n", cgc->jind_mem);
+    fprintf(stderr, "\tjind_reg: \t%llu\n", cgc->jind_reg);
+
     fprintf(stderr, "cind_dyn: \t%llu\n", cgc->cind_dyn_count);
-    fprintf(stderr, "switch_type_cind: \t%llu\n", cgc->switch_type_cind);
-    fprintf(stderr, "switch_type_cind_rate: \t%s%%\n", 
-                     calc_perc(cgc->switch_type_cind, cgc->jind_dyn_count));
+    fprintf(stderr, "\tcind_disp_mem: \t%llu\n", cgc->cind_disp_mem);
+    fprintf(stderr, "\tcind_reg_mem: \t%llu\n", cgc->cind_reg_mem);
+    fprintf(stderr, "\tcind_mem: \t%llu\n", cgc->cind_mem);
+    fprintf(stderr, "\tcind_reg: \t%llu\n", cgc->cind_reg);
 #ifdef J_IND_OPT
     fprintf(stderr, "jind_nothit: \t%llu\n", cgc->jind_nothit_count);
 #endif
@@ -732,17 +712,6 @@ void prof_stat(CPUX86State *env)
 #endif
 #ifdef VAR_TGT
     fprintf(stderr, "tgt_replace_count: \t%d\n", env->tgt_replace_count);
-#endif
-#if 0
-#ifdef VAR_TGT_EACH
-	TranslationBlock *tb;
-	for(i = 0; i < env->ind_tb_index; i++) {
-		tb = (TranslationBlock *)(env->ind_tbs[i]);
-		fprintf(stderr, "cur_id_tb: spc is %x\n", tb->pc); 
-		fprintf(stderr, "\t\tpredict miss count is %d\n", tb->ind_miss_count);
-		fprintf(stderr, "\t\treplace count is %d \n", tb->ind_replace_count);
-	}
-#endif
 #endif
 }
 
