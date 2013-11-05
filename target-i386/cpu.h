@@ -681,6 +681,7 @@ typedef struct CPUX86State {
 #endif
     uint32_t ind_dest;
     uint32_t ind_type;
+    uint32_t trapnr;
 #ifdef RETRANS_IND
     bool has_ind;
     uint32_t ind_tb;

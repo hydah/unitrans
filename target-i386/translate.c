@@ -1709,9 +1709,40 @@ bool emit_int(CPUX86State *env, decode_t *ds)
         /* popf */
         code_emit8(env->code_ptr, 0x9d);
     }
-    memcpy(env->code_ptr, (uint8_t *)(cgc->pc_ptr - cgc->insn_len), cgc->insn_len);
-    env->code_ptr += cgc->insn_len;
-    return true;
+    /* movl ds->instr[1], (env->trapnr) */
+    addr = (uint32_t)&(env->trapnr);
+    code_emit8(env->code_ptr, 0xc7u);
+    code_emit8(env->code_ptr, 0x05u); /* ModRM = 00 000 101b */
+    code_emit32(env->code_ptr, addr);
+    code_emit32(env->code_ptr, (uint32_t)ds->instr[1]);
+
+    /* movl cgc->pc_ptr, (env->eip) */
+    addr = (uint32_t)&(env->eip);
+    code_emit8(env->code_ptr, 0xc7u);
+    code_emit8(env->code_ptr, 0x05u); /* ModRM = 00 000 101b */
+    code_emit32(env->code_ptr, addr);
+    code_emit32(env->code_ptr, (uint32_t)cgc->pc_ptr);
+
+    /* movl cgc->pc_ptr, (env->ret_tb) */
+    addr = (uint32_t)&(env->ret_tb);
+    code_emit8(env->code_ptr, 0xc7u);
+    code_emit8(env->code_ptr, 0x05u); /* ModRM = 00 000 101b */
+    code_emit32(env->code_ptr, addr);
+    code_emit32(env->code_ptr, (uint32_t)cur_tb);
+
+    /* movl TYPE_SYSCALL, (env->ind_type) */
+    addr = (uint32_t)&(env->ind_type);
+    code_emit8(env->code_ptr, 0xc7u);
+    code_emit8(env->code_ptr, 0x05u); /* ModRM = 00 000 101b */
+    code_emit32(env->code_ptr, addr);
+    code_emit32(env->code_ptr, TYPE_SYSCALL);
+
+    /* jmp tb_epilogue */
+    code_emit8(env->code_ptr, 0xe9u);
+    jmp_offset = cgc->tb_ret_addr - env->code_ptr - 4; 
+    code_emit32(env->code_ptr, jmp_offset);
+
+    return false;
 }
 
 bool emit_sysenter(CPUX86State *env, decode_t *ds)

@@ -305,6 +305,28 @@ static void patch_ind_opt(TranslationBlock *prev_tb, TranslationBlock *tb)
 
 int prolog_count = 0;
 
+void handle_syscall(int trapnr)
+{
+    abi_ulong pc;
+    switch(trapnr) {
+        case 0x80:
+            /* linux syscall from int $0x80 */
+            env->regs[R_EAX] = do_syscall(env,
+                    env->regs[R_EAX],
+                    env->regs[R_EBX],
+                    env->regs[R_ECX],
+                    env->regs[R_EDX],
+                    env->regs[R_ESI],
+                    env->regs[R_EDI],
+                    env->regs[R_EBP]);
+            break;
+        default:
+            pc = env->segs[R_CS].base + env->eip;
+            fprintf(stderr, "qemu: 0x%08lx: unhandled CPU exception 0x%x - aborting\n",
+                    (long)pc, trapnr);
+            abort();
+    }
+}
 
 int cpu_exec(CPUState *env1)
 {
@@ -335,10 +357,14 @@ int cpu_exec(CPUState *env1)
 				add_sieve_entry(env, tb, env->ind_type);
 				env->ind_type = NOT_IND;
             } else {
+                if (env->ind_type == TYPE_SYSCALL) {
+                    prev_tb = 0;
+                } else {
 #ifdef IND_OPT
-                patch_ind_opt((TranslationBlock *)prev_tb, tb);
-                prev_tb = 0;
+                    patch_ind_opt((TranslationBlock *)prev_tb, tb);
+                    prev_tb = 0;
 #endif
+                }
             }
         }
 
@@ -365,11 +391,18 @@ int cpu_exec(CPUState *env1)
         tc_ptr = tb->tc_ptr;
         env->target_tc = (uint32_t)tc_ptr;
         env->ret_tb = 0;
+        env->trapnr = -1;
         env->ind_type = NOT_IND;
        
         /* enter code cache */
         prev_tb = tcg_qemu_tb_exec(tc_ptr);
         
+        if (env->ind_type == TYPE_SYSCALL) {
+            //fprintf(stderr, "env->trapnr is %d\n", env->trapnr);
+            handle_syscall(env->trapnr); 
+        }
+
+        //fprintf(stderr, "prev_tb = 0x%x pc = 0x%x\n", prev_tb, env->eip);
 
         env->current_tb = NULL;
     } /* for(;;) */
