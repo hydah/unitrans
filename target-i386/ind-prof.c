@@ -459,6 +459,14 @@ static void calc_ind_hit(void)
 #endif
     fprintf(stderr, "ind_hitrate: %s%%\n",
             calc_perc(ind_count - ind_miss, ind_count));
+	/* add for mru */
+	fprintf(stderr, "mru_replace_count: %d\n", cgc->mru_replace_count);
+	fprintf(stderr, "mru_conversion_ratio: %s%%\n",
+            calc_perc(cgc->jind_mru_hit_count + cgc->cind_mru_hit_count, cgc->mru_replace_count));
+	fprintf(stderr, "mru_hit_rate: %s%%\n",
+            calc_perc(cgc->jind_mru_hit_count + cgc->cind_mru_hit_count, ind_count));
+	fprintf(stderr, "jind_mru_hit_count: %d\n", cgc->jind_mru_hit_count);
+	fprintf(stderr, "cind_mru_hit_count: %d\n", cgc->cind_mru_hit_count);
 }
 #endif
 
@@ -520,14 +528,12 @@ static int ind_prof_stat(void)
         }
 #endif
     }
-#if 0
     fprintf(stderr, "rec_hit_num: %llu\nrec_hitrate: %s%%\n", 
                     recent_hit_sum, calc_perc(recent_hit_sum, ind_count));
     fprintf(stderr, "max_hit_num: %llu\nmax_hitrate: %s%%\n", 
                     max_hit_sum, calc_perc(max_hit_sum, ind_count));
     fprintf(stderr, "prof_hit_num: %llu\nprof_hitrate: %s%%\n", 
                     prof_hit_sum, calc_perc(prof_hit_sum, ind_count));
-#endif
     return cgc->stat_node_count;
 }
 #endif
@@ -629,10 +635,6 @@ void prof_stat(CPUX86State *env)
     fprintf(stderr, "j_ind: \t%d\n", cgc->j_ind_count);
     fprintf(stderr, "call: \t%d\n", cgc->call_count);
     fprintf(stderr, "call_ind: \t%d\n", cgc->call_ind_count);
-#ifdef SWITCH_OPT
-	fprintf(stderr, "switch-case_num: \t%u\n", sa_num);
-	fprintf(stderr, "call-table_num: \t%u\n", call_table);
-#endif
     fprintf(stderr, "ret: \t%d\n", cgc->ret_count);
     fprintf(stderr, "retIz: \t%d\n", cgc->retIw_count);
     fprintf(stderr, "direct_trans_count: \t%d\n", 
@@ -669,8 +671,6 @@ void prof_stat(CPUX86State *env)
     fprintf(stderr, "sv_travel_dyn: \t%llu\n", cgc->sv_travel_count);
     fprintf(stderr, "jind_dyn: \t%llu\n", cgc->jind_dyn_count);
     fprintf(stderr, "cind_dyn: \t%llu\n", cgc->cind_dyn_count);
-
-
 #ifdef J_IND_OPT
     fprintf(stderr, "jind_nothit: \t%llu\n", cgc->jind_nothit_count);
 #endif
@@ -714,6 +714,24 @@ void prof_stat(CPUX86State *env)
     fprintf(stderr, "totalcode_size: \t%d\n", sieve_ptr_size + code_ptr_size);
 #if defined(PROF_IND) && defined(COUNT_PROF)
     fprintf(stderr, "ind2: \t%d\n", ind_prof_stat());
+#endif
+#ifdef VAR_TGT
+    fprintf(stderr, "tgt_replace_count: \t%d\n", env->tgt_replace_count);
+#endif
+#if 0
+#ifdef VAR_TGT_EACH
+	TranslationBlock *tb;
+	for(i = 0; i < env->ind_tb_index; i++) {
+		tb = (TranslationBlock *)(env->ind_tbs[i]);
+		fprintf(stderr, "cur_id_tb: spc is %x\n", tb->pc); 
+		fprintf(stderr, "\t\tpredict miss count is %d\n", tb->ind_miss_count);
+		fprintf(stderr, "\t\treplace count is %d \n", tb->ind_replace_count);
+	}
+#endif
+#endif
+#ifdef SWITCH_OPT
+	fprintf(stderr, "switch-case_num: \t%u\n", sa_num);
+	fprintf(stderr, "call-table_num: \t%u\n", call_table);
 #endif
 }
 

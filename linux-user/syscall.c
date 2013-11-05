@@ -712,7 +712,6 @@ abi_long do_brk(abi_ulong new_brk)
     	return target_brk;
     }
 
-    fprintf(stderr, "the brk_page is %x\n", brk_page);
     /* We need to allocate more memory after the brk... */
     new_alloc_size = HOST_PAGE_ALIGN(new_brk - brk_page + 1);
     mapped_addr = get_errno(target_mmap(brk_page, new_alloc_size,
@@ -728,10 +727,7 @@ abi_long do_brk(abi_ulong new_brk)
 #endif
 
     if (!is_error(mapped_addr)) {
-        if (brk_page != mapped_addr) {
-            return target_brk;
-        }
-        target_brk = new_brk;
+	target_brk = new_brk;
     }
     return target_brk;
 }
@@ -3355,7 +3351,6 @@ static abi_long do_set_thread_area(CPUX86State *env, abi_ulong ptr)
     uint32_t *lp, entry_1, entry_2;
     int i;
 
-    fprintf(stderr, "\nhere is %s, gdt_table is %x\n", __FUNCTION__, gdt_table);
     lock_user_struct(VERIFY_WRITE, target_ldt_info, ptr, 1);
     if (!target_ldt_info)
         return -TARGET_EFAULT;
@@ -3581,7 +3576,6 @@ static int do_fork(CPUState *env, unsigned int flags, abi_ulong newsp,
                    abi_ulong parent_tidptr, target_ulong newtls,
                    abi_ulong child_tidptr)
 {
-    fprintf(stdout, "this is do_fork\n");
     int ret;
     TaskState *ts;
     uint8_t *new_stack;
@@ -7032,7 +7026,6 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
         ret = -TARGET_EOPNOTSUPP;
         break;
 #endif
-
 #ifdef TARGET_NR_set_thread_area
     case TARGET_NR_set_thread_area:
 #if defined(TARGET_MIPS)
@@ -7048,8 +7041,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
       }
       break;
 #elif defined(TARGET_I386) && defined(TARGET_ABI32)
-      //ret = do_set_thread_area(cpu_env, arg1);
-      ret = syscall(__NR_set_thread_area, arg1);
+      ret = do_set_thread_area(cpu_env, arg1);
       break;
 #else
       goto unimplemented_nowarn;

@@ -21,14 +21,16 @@
 #include "cemit-inline.c"
 #include "retrans-ind.h"
 #include "ind-prof.h"
-#include <sys/mman.h>
 
+#ifdef SWITCH_OPT
+sa_ptn *cur_ptn;
 
-void cemit_prof_ind(CPUX86State *env, decode_t *ds, TranslationBlock *tb,
-                    uint32_t ind_type);
-
+int sa_num = 0;
+int call_table = 0;
+#endif
 code_gen_context *cgc;
 TranslationBlock *cur_tb;
+FILE *fout;
 static void exit_stub(CPUX86State *env)
 {
     fprintf(stderr, "exit\n");    
@@ -40,6 +42,18 @@ static void cemit_sieve(CPUX86State *env, uint32_t sieve_table);
 static void cemit_sieve_nopush(CPUX86State *env, uint32_t sieve_table);
 static void cemit_exit_tb(CPUX86State *env, uint32_t ret_tb, uint32_t ind_type);
 
+/* add for switch case */
+bool emit_sa(CPUX86State *env, decode_t *ds);
+bool emit_call_table(CPUX86State *env, decode_t *ds);
+static int is_what(decode_t *tds);
+static uint32_t parse_sa(decode_t *tds);
+
+#ifdef VAR_TGT
+static uint8_t *clear_ind_tgt_stub;
+static void cemit_clear_ind_tgt(CPUX86State *env);
+static void cemit_count_g_ind_miss(CPUX86State *env);
+static void cemit_count_each_tb_ind_miss(CPUX86State *env, TranslationBlock *tb);
+#endif
 
 void note_patch(CPUX86State *env, uint8_t *at, uint8_t *to, uint8_t *tb, 
                               uint32_t func_addr, uint32_t tb_tag)
@@ -176,21 +190,28 @@ static inline void ret_cache_proc_init(CPUX86State *env)
 }
 #endif
 
+	
 void codecache_prologue_init(CPUX86State *env)
 {
     int i;
     uint8_t *code_ptr;
     uint32_t addr;
     cgc = (code_gen_context *)malloc(sizeof(code_gen_context));
-    fprintf(stderr, "cgc  is %x \n", cgc);
     memset(cgc, 0, sizeof(code_gen_context));
+	
+#ifdef SWITCH_OPT
+	cur_ptn = (sa_ptn *)malloc(sizeof(sa_ptn));
+	memset(cur_ptn, 0, sizeof(sa_ptn));
+	sa_num = 0;
+	call_table = 0;
+#endif
+
+	fout = fopen("/tmp/ind_profile.log", "w+");
 
     code_ptr = (uint8_t *)code_gen_prologue;
     addr = (uint32_t)&(env->regs[R_EAX]);
     /* preserve a stack bucket for popf */
     env->regs[R_ESP] = env->regs[R_ESP] - 4;
-    fprintf(stderr, "env->reg[esp] is %x \n", env->regs[R_ESP]);
-    fprintf(stderr, "env->esp_tmp is %x \n", &i);
 
     /* TB prologue */
     /* push %ebx, %ebp, %esi, %edi */
@@ -266,85 +287,18 @@ void codecache_prologue_init(CPUX86State *env)
 #ifdef RET_CACHE
     ret_cache_proc_init(env);
 #endif
+#ifdef VAR_TGT
+    cemit_clear_ind_tgt(env);
+#endif
+
+#ifdef SWITCH_OPT
+	env->sa_code_ptr = switch_case_buffer;
+#endif
 
 
     fprintf(stderr, "initial pc: 0x%x\n", env->eip);
-
     make_tb(env, env->eip, env->eip, 0);
 }
-
-#ifdef LAZY_SHA_OPT
-void cemit_prof_ind(CPUX86State *env, decode_t *ds, TranslationBlock *tb,
-                    uint32_t ind_type)
-{
-    uint8_t *patch_addr;
-    uint32_t addr, jmp_offset;
-
-    cur_tb->ind_dyn_count = 0;
-    addr = (uint32_t)&cur_tb->ind_dyn_count;
-
-    /* pushf */
-    code_emit8(env->code_ptr, 0x9c);
-    /* incl tb->ind_dyn_count */
-    code_emit8(env->code_ptr, 0xff);
-    code_emit8(env->code_ptr, 0x05); /* ModRM = 00 000 101b */
-    code_emit32(env->code_ptr, addr);
-    /* cmpl ind_dyn_count, SHA_THRESHOLD */
-    code_emit8(env->code_ptr, 0x81);
-    code_emit8(env->code_ptr, 0x3d); /* ModRM = 00 111 101b */
-    code_emit32(env->code_ptr, addr);
-    code_emit32(env->code_ptr, SHA_THRESHOLD);
-    /* je equal */
-    /* fall-through to the code_ptr */
-    code_emit8(env->code_ptr, 0x0f);
-    code_emit8(env->code_ptr, 0x84);
-    patch_addr = env->code_ptr;
-    code_emit32(env->code_ptr, NEED_PATCH_32);
-    /* popf */
-    code_emit8(env->code_ptr, 0x9d);
-
-    /* equal: NOTE: following code is placed in sieve_code_ptr */
-    *(uint32_t *)patch_addr = env->sieve_code_ptr - patch_addr - 4;
-    /* pusha */
-    code_emit8(env->sieve_code_ptr, 0x60);
-    /* push cur_tb */
-    code_emit8(env->sieve_code_ptr, 0x68);
-    code_emit32(env->sieve_code_ptr, (uint32_t)tb);
-    /* push ds */
-    code_emit8(env->sieve_code_ptr, 0x68);
-    code_emit32(env->sieve_code_ptr, (uint32_t)ds);
-    /* push env */
-    code_emit8(env->sieve_code_ptr, 0x68);
-    code_emit32(env->sieve_code_ptr, (uint32_t)env);
-    if (ind_type == IND_TYPE_JMP) {
-        /* call cemit_shadow_jind */
-        code_emit8(env->sieve_code_ptr, 0xe8);
-        jmp_offset = (uint32_t)cemit_shadow_jind - (uint32_t)(env->sieve_code_ptr) - 4;
-        code_emit32(env->sieve_code_ptr, jmp_offset);
-    } else if (ind_type == IND_TYPE_CALL) {
-        /* call cemit_shadow_cind */
-        code_emit8(env->sieve_code_ptr, 0xe8);
-        jmp_offset = (uint32_t)cemit_shadow_cind- (uint32_t)(env->sieve_code_ptr) - 4;
-        code_emit32(env->sieve_code_ptr, jmp_offset);
-    }
-    /* leal %esp, 12(%esp) */
-    code_emit8(env->sieve_code_ptr, 0x8d);
-    code_emit8(env->sieve_code_ptr, 0x64); /*01 100 100 */
-    code_emit8(env->sieve_code_ptr, 0x24); /*10 100 100 */
-    code_emit8(env->sieve_code_ptr, 12);
-    /* popa */
-    code_emit8(env->sieve_code_ptr, 0x61);
-    /* popf */
-    code_emit8(env->sieve_code_ptr, 0x9d);
-    /* jmp back to shadow_profile_start */
-    code_emit8(env->sieve_code_ptr, 0xe9);
-    code_emit32(env->sieve_code_ptr,
-               (uint32_t)tb->shadow_profile_start - (uint32_t)env->sieve_code_ptr - 4); //FIXME
-
-    ABORT_IF((env->sieve_code_ptr - sieve_buffer > DEFAULT_SIEVE_BUFFER_SIZE),
-           "out of sieve buffer\n");
-}
-#endif
 
 static inline void emit_push_rm(uint8_t **pcode_ptr, decode_t * ds)
 {
@@ -436,7 +390,29 @@ void add_sieve_entry(CPUX86State *env, TranslationBlock *tb, int type)
     code_emit32(env->sieve_code_ptr, jmp_offset);
   
     /* equal: */
-    /* pop %ecx */
+#ifdef MRU_OPT
+	/* add for mru */
+	uint8_t *code_ptr_bak;
+	code_ptr_bak = env->code_ptr;
+	env->code_ptr = env->sieve_code_ptr;
+	INCL_COUNT(mru_replace_count);
+	env->sieve_code_ptr = env->code_ptr;
+	env->code_ptr = code_ptr_bak;
+
+	/* mov tb->tc_ptr, (mru_dest_addr) */
+	code_emit8(env->sieve_code_ptr, 0xc7);
+    code_emit8(env->sieve_code_ptr, 0x05); /* ModRM = 00 000 101b */
+    code_emit32(env->sieve_code_ptr, env->mru_dest_addr);
+    code_emit32(env->sieve_code_ptr, (uint32_t)(tb->tc_ptr)- env->mru_dest_addr - 4);
+
+	/* mov tb->pc, (mru_src_addr) */
+	code_emit8(env->sieve_code_ptr, 0xc7);
+    code_emit8(env->sieve_code_ptr, 0x05); /* ModRM = 00 000 101b */
+    code_emit32(env->sieve_code_ptr, env->mru_src_addr);
+    code_emit32(env->sieve_code_ptr, -(uint32_t)(tb->pc));
+#endif
+
+	/* pop %ecx */
     code_emit8(env->sieve_code_ptr, 0x59);
 
     /* leal 4(%esp), %esp */
@@ -460,6 +436,7 @@ void gen_target_code(CPUState *env, TranslationBlock *tb)
     decode_t ds1, *ds = &ds1;
     int num_insns;
     bool cont_trans;
+	uint32_t ret;
 
     cgc->pc_start = tb->pc;
     cgc->pc_ptr = cgc->pc_start;
@@ -485,12 +462,6 @@ void gen_target_code(CPUState *env, TranslationBlock *tb)
 
     ///printf("start tb_gen_code cgc->pc_ptr = 0x%x\n", cgc->pc_ptr);
     for(num_insns = 0; ;num_insns++) {
-
-#ifdef REG_OPT 
-        INCL_RING(cur_flag);
-        instr_ring[cur_flag] = cgc->pc_ptr;
-#endif
-
         simple_disas_insn(ds, cgc->pc_ptr);
 
 
@@ -505,7 +476,10 @@ void gen_target_code(CPUState *env, TranslationBlock *tb)
         cgc->insn_len = ds->decode_eip - cgc->pc_ptr;
         cgc->pc_ptr = ds->decode_eip;
 
-        cont_trans = (ds->emitfn)(env, ds);
+#ifdef SWITCH_OPT
+		ret = parse_sa(ds);
+#endif
+		cont_trans = (ds->emitfn)(env, ds);
 
         cur_tb->insn_count++;
 
@@ -714,9 +688,9 @@ static inline void cemit_ind_count(CPUX86State *env, decode_t *ds)
     uint32_t jmp_offset;
     uint32_t key;
 
-    /* modified by heyu */
+	/* modified by heyu */
     //key = cur_tb->pc;
-    key = (uint32_t)env->code_ptr;
+	key = (uint32_t)env->code_ptr;
     //stat_src_add(key);
 
     /* pusha */
@@ -1106,17 +1080,21 @@ static void cemit_ind_opt(CPUX86State *env, int m_ind_type)
 {
     uint8_t *patch_addr[IND_SLOT_MAX];
     int i;
+	/* add for mru */
+	uint32_t addr;
+	uint32_t *patch_addr_tmp;
+	uint32_t *patch_mru_src;
+	uint32_t *patch_mru_dest;
 
-   // qemu_log("jind: pc:0x%x\n", cgc->pc_ptr - cgc->insn_len);
-#ifdef IND_TGT_TH
+    qemu_log("jind: pc:0x%x\n", cgc->pc_ptr - cgc->insn_len);
+
     cur_tb->ind_tgt = &ind_tgt_nodes[nb_ind_tgt_nodes++];
     ABORT_IF(nb_ind_tgt_nodes > IND_TGT_NODE_MAX, "ind nodes overflow\n");
-#endif
 
     /* push %ecx */
     code_emit8(env->code_ptr, 0x51);
 
-    for(i = 0; i < IND_SLOT_MAX; i++) {
+	for(i = 0; i < IND_SLOT_MAX; i++) {
         /* mov 4(%esp), %ecx */
         code_emit8(env->code_ptr, 0x8b);
         code_emit8(env->code_ptr, 0x4c); /* 01 001(ECX) 100 */
@@ -1126,19 +1104,33 @@ static void cemit_ind_opt(CPUX86State *env, int m_ind_type)
         code_emit8(env->code_ptr, 0x8d);
         code_emit8(env->code_ptr, 0x89); /* 10 001 001 */
         cur_tb->jind_src_addr[i] = (uint32_t)env->code_ptr;
+#ifdef MRU_OPT
+		if(i == IND_SLOT_MAX - 1)
+			patch_mru_src = (uint32_t)env->code_ptr;
+#endif
         code_emit32(env->code_ptr, -NEED_PATCH_32);
         /* jecxz equal */
         code_emit8(env->code_ptr, 0xe3);
         patch_addr[i] = env->code_ptr;
         code_emit8(env->code_ptr, NEED_PATCH_8);
     }
-
     if(m_ind_type == IND_TYPE_JMP) {
         INCL_COUNT(jind_nothit_count);
     } else {
         INCL_COUNT(cind_nothit_count);
     }
 
+#ifdef VAR_TGT
+    env->ind_tbs[env->ind_tb_index++] = (uint8_t *)cur_tb;
+    cur_tb->type = m_ind_type;
+#ifdef VAR_TGT_EACH
+	cemit_count_each_tb_ind_miss(env, cur_tb);
+#endif
+#ifdef VAR_TGT2
+    cemit_count_g_ind_miss(env);
+#endif
+
+#endif
 
 #ifdef RETRANS_IND
     bool tb_retransed;
@@ -1151,6 +1143,45 @@ static void cemit_ind_opt(CPUX86State *env, int m_ind_type)
     if(is_retrans == false && tb_retransed == false) {
         cemit_retrans_ind(env, IND_TYPE_JMP);
     }
+#endif
+
+#if 0
+	/* add for every replacement */
+
+	addr = (uint32_t)(&cur_tb->jind_src_addr);
+	/* mov &cur_tb->jmp_ind_index, %ecx */
+	/* calculate ecx */
+	/* mov %ecx (&cur_tb->jmp_ind_index) */
+	/* leal (addr,%ecx,4), ecx */
+	/* mov %ecx, (&env->mru_src_addr) */
+    addr = (uint32_t)(&env->mru_src_addr);
+	code_emit8(env->code_ptr, 0xc7);
+    code_emit8(env->code_ptr, 0x05); /* ModRM = 00 000 101b */
+    code_emit32(env->code_ptr, addr);
+    code_emit32(env->code_ptr, (uint32_t)patch_mru_src);
+
+	addr = (uint32_t)(&cur_tb->jind_dest_addr);
+	/* mov &cur_tb->jmp_ind_index, %ecx */
+	/* leal (addr,%ecx,4), ecx */
+	/* mov %ecx, (&env->mru_dest_addr) */
+#endif
+	
+#ifdef MRU_OPT
+	/* add for mru */
+	/* mov patch_mru_src, (&env->mru_src_addr) */
+    addr = (uint32_t)(&env->mru_src_addr);
+	code_emit8(env->code_ptr, 0xc7);
+    code_emit8(env->code_ptr, 0x05); /* ModRM = 00 000 101b */
+    code_emit32(env->code_ptr, addr);
+    code_emit32(env->code_ptr, (uint32_t)patch_mru_src);
+
+	/* mov patch_mru_dest, (&env->mru_src_addr) */
+    addr = (uint32_t)(&env->mru_dest_addr);
+	code_emit8(env->code_ptr, 0xc7);
+    code_emit8(env->code_ptr, 0x05); /* ModRM = 00 000 101b */
+    code_emit32(env->code_ptr, addr);
+	patch_addr_tmp = env->code_ptr;
+    code_emit32(env->code_ptr, NEED_PATCH_32);
 #endif
 
     /* the size of exit_stub is larger than sieve_enter,
@@ -1166,7 +1197,6 @@ static void cemit_ind_opt(CPUX86State *env, int m_ind_type)
     cemit_count_tgt(env, cur_tb);
 #endif
 #endif
-
     cemit_exit_tb(env, (uint32_t)cur_tb, m_ind_type);
 
     uint32_t jmp_offset;
@@ -1181,9 +1211,21 @@ static void cemit_ind_opt(CPUX86State *env, int m_ind_type)
         code_emit8(env->code_ptr, 0x64); /*01 100 100 */
         code_emit8(env->code_ptr, 0x24); /*10 100 100 */
         code_emit8(env->code_ptr, 4);
+#ifdef MRU_OPT
+		if (i == IND_SLOT_MAX - 1) {
+			 if(m_ind_type == IND_TYPE_JMP) {
+				 INCL_COUNT(jind_mru_hit_count);
+			 } else {
+				 INCL_COUNT(cind_mru_hit_count);
+			 }
+		}
+#endif
         /* jmp $TPC_i */
         code_emit8(env->code_ptr, 0xe9);
         cur_tb->jind_dest_addr[i] = (uint32_t)env->code_ptr;
+#ifdef MRU_OPT
+		if (i ==  IND_SLOT_MAX - 1) *patch_addr_tmp = (uint32_t)env->code_ptr;
+#endif
         code_emit32(env->code_ptr, NEED_PATCH_32);
     }
 }
@@ -1214,7 +1256,7 @@ void rebuild_profed_tb(CPUX86State *env, TranslationBlock *tb)
 
 #ifdef RET_CACHE
 static inline void cemit_rc_cmp(CPUX86State *env, uint8_t *patch_addr_rc,
-                bool is_recur) 
+				bool is_recur) 
 {
     *(uint32_t *)patch_addr_rc = (uint32_t)env->code_ptr;
 
@@ -1317,18 +1359,20 @@ bool emit_call_disp(CPUX86State *env, decode_t *ds)
     return trans_next(env, ds, false);
 }
 
-
 /* extra code size = 23(rc_1) + 30(sieve) + 49(rc_2) = 102 */
 bool emit_call_near_mem(CPUX86State *env, decode_t *ds)
 {
     uint32_t addr;
-
+    
     cgc->call_ind_count++;
-    cur_tb->type = IND_TYPE_CALL;
 
     INCL_COUNT(cind_dyn_count);
     ADD_INSNS_COUNT(cgc->insn_dyn_count, cur_tb->insn_count + 1);
 
+#ifdef PROF_CIND
+    cemit_ind_count(env, ds);
+#endif
+    PUSH_PATH(env, true);
 
     bool dest_based_on_esp = false;
     if(ds->modrm.parts.reg == 0x4u) {
@@ -1337,39 +1381,25 @@ bool emit_call_near_mem(CPUX86State *env, decode_t *ds)
         if(ds->modrm.parts.rm == 0x4u)
             dest_based_on_esp = true;
     } else if(ds->modrm.parts.rm == 0x4u && ds->sib.parts.base == 0x4u) {
-        dest_based_on_esp = true;
+            dest_based_on_esp = true;
     }
+    
+    ABORT_IF((dest_based_on_esp == true), "error dest_based on esp\n");
 
-    //ABORT_IF((dest_based_on_esp == true), "error dest_based on esp\n");
-	if (dest_based_on_esp == true) {
-		/* Push (dest) */
-		emit_push_rm(&env->code_ptr, ds);
-		/* push (%esp) */
-		code_emit8(env->code_ptr, 0xff);
-		code_emit8(env->code_ptr, 0x34); /* 00 110 100 */
-		code_emit8(env->code_ptr, 0x24);/* 00 100 100 */
+    /* Push cgc->pc_ptr */
+    code_emit8(env->code_ptr, 0x68u);     /* PUSH */
+    code_emit32(env->code_ptr, cgc->pc_ptr);
+    /* Push (dest) */
+    emit_push_rm(&env->code_ptr, ds);
 
-		/* mov %ecx, 4(%esp) */
-		code_emit8(env->code_ptr, 0xc7);
-		code_emit8(env->code_ptr, 0x44); /* 01 000 100 */
-		code_emit8(env->code_ptr, 0x24); /* 00 100 100 */
-		code_emit8(env->code_ptr, 0x4);
-		code_emit32(env->code_ptr, cgc->pc_ptr);
-
-	}
-	else {
-		/* Push cgc->pc_ptr */
-		code_emit8(env->code_ptr, 0x68u);     /* PUSH */
-		code_emit32(env->code_ptr, cgc->pc_ptr);
-
-		/* Push (dest) */
-		emit_push_rm(&env->code_ptr, ds);
-	}
-
+#ifdef CALL_RAS_OPT
+    uint8_t *patch_addr_call;
+    patch_addr_call = cemit_push_ras_ind(env);
+#endif
 
 #ifdef RET_CACHE
     uint8_t *patch_addr_rc;
-
+    
     /* push %ecx */
     code_emit8(env->code_ptr, 0x51);
     /* movl 4(%esp), %ecx */
@@ -1396,14 +1426,17 @@ bool emit_call_near_mem(CPUX86State *env, decode_t *ds)
     code_emit8(env->code_ptr, 0x59);
 #endif
 
-
 #ifdef CALL_IND_OPT
     cemit_ind_opt(env, IND_TYPE_CALL);
 #else
 #ifdef SIEVE_OPT
-    cemit_sieve(env, (uint32_t)env->sieve_hashtable);
+    env->code_ptr = cemit_sieve(env, (uint32_t)env->sieve_hashtable);
 #endif
-#endif  
+#endif
+
+#ifdef CALL_RAS_OPT
+    *(uint32_t *)patch_addr_call = (uint32_t)env->code_ptr;
+#endif
 
 #ifdef RET_CACHE
     cemit_rc_cmp(env, patch_addr_rc, false);
@@ -1418,12 +1451,10 @@ bool emit_ret(CPUX86State *env, decode_t *ds)
 
     //printf("ret cgc->pc_ptr = 0x%x\n", cgc->pc_ptr);
     cgc->ret_count ++;
-
     ADD_INSNS_COUNT(cgc->insn_dyn_count, cur_tb->insn_count + 1);
     PUSH_PATH(env, true);
 
     INCL_COUNT(ret_dyn_count);
-
 
 #ifdef CALL_RAS_OPT
     cemit_pop_ras(env, 0);
@@ -1451,7 +1482,6 @@ bool emit_ret(CPUX86State *env, decode_t *ds)
     code_emit8(env->code_ptr, 0x25);
     code_emit32(env->code_ptr, addr);
 #else
-
     cemit_sieve(env, (uint32_t)env->sieve_rettable);
 #endif
     return false;
@@ -1493,11 +1523,12 @@ bool emit_ret_Iw(CPUX86State *env, decode_t *ds)
     code_emit8(env->code_ptr, 0x25);
     code_emit32(env->code_ptr, addr);
 #else
-    cemit_sieve(env, (uint32_t)env->sieve_rettable);
+    env->code_ptr = cemit_sieve(env, (uint32_t)env->sieve_rettable);
 #endif
 
     return false;
 }
+
 /* extra code size = 0 */
 bool emit_jcond(CPUX86State *env, decode_t *ds)
 {
@@ -1518,7 +1549,7 @@ bool emit_jcond(CPUX86State *env, decode_t *ds)
     }
 
     if (ds->flags & DSFL_GROUP2_PREFIX)
-        code_emit8(env->code_ptr, ds->Group2_Prefix);
+      code_emit8(env->code_ptr, ds->Group2_Prefix);
 
     cond = (ds->instr[0] == 0x0fu) ? ds->instr[1] : ds->instr[0];
 
@@ -1527,7 +1558,7 @@ bool emit_jcond(CPUX86State *env, decode_t *ds)
     code_emit8(env->code_ptr, (cond & 0x0fu) | 0x80);
     code_emit32(env->code_ptr, NEED_PATCH_32);
     note_patch(env, env->code_ptr - 4, (uint8_t *)jmp_target, 
-            (uint8_t *)cur_tb, cur_tb->func_addr, NORMAL_TB_TAG);
+              (uint8_t *)cur_tb, cur_tb->func_addr, NORMAL_TB_TAG);
 
     return trans_next(env, ds, false);
 }
@@ -1643,14 +1674,24 @@ bool emit_jmp(CPUX86State *env, decode_t *ds)
     return false;
 }
 
-
+/* extra code size = 30(sieve) */
 bool emit_jmp_near_mem(CPUX86State *env, decode_t *ds)
 {
-    uint32_t addr;
 
+    uint32_t addr;
+    //printf("jmp_near_mem cgc->pc_ptr = 0x%x\n", cgc->pc_ptr);
     cgc->j_ind_count++;
-    cur_tb->type = IND_TYPE_JMP;
+    ADD_INSNS_COUNT(cgc->insn_dyn_count, cur_tb->insn_count + 1);
     INCL_COUNT(jind_dyn_count);
+
+#ifdef PROF_JIND
+    cemit_ind_count(env, ds);
+#endif
+    PUSH_PATH(env, true);
+
+    /* push (dest) */
+    emit_push_rm(&env->code_ptr, ds);
+
     /* mov func_addr, (&env->ind_dest) */
     addr = (uint32_t)&(env->ind_dest);
     code_emit8(env->code_ptr, 0xc7);
@@ -1658,18 +1699,15 @@ bool emit_jmp_near_mem(CPUX86State *env, decode_t *ds)
     code_emit32(env->code_ptr, addr);
     code_emit32(env->code_ptr, (uint32_t)cur_tb->func_addr);
 
-
-
-    // cannot be optimized by this method
-    /* push (dest) */
-    emit_push_rm(&env->code_ptr, ds);
 #ifdef J_IND_OPT
     cemit_ind_opt(env, IND_TYPE_JMP);
 #else
 #ifdef SIEVE_OPT
-    cemit_sieve(env, (uint32_t)env->sieve_hashtable);
+    env->code_ptr = cemit_sieve(env, (uint32_t)env->sieve_jmptable);
 #endif
 #endif
+
+    ///return trans_next(env, ds, false);
     return false;
 }
 
@@ -1678,7 +1716,7 @@ bool emit_int(CPUX86State *env, decode_t *ds)
     uint32_t jmp_offset, addr;
     uint8_t *patch_addr;
 
-    
+    //printf("int cgc->pc_ptr = 0x%x\n", cgc->pc_ptr);
     /* copy insn to codecache */
     if (ds->instr[1] == 0x80) {
         /* pushf */
@@ -1690,27 +1728,30 @@ bool emit_int(CPUX86State *env, decode_t *ds)
         code_emit8(env->code_ptr, 0x75);
         patch_addr = env->code_ptr;
         code_emit8(env->code_ptr, NEED_PATCH_8);
-        /* push env */
-        code_emit8(env->code_ptr, 0x68);
-        code_emit32(env->code_ptr, (uint32_t)env);
+	/* push env */
+	code_emit8(env->code_ptr, 0x68);
+	code_emit32(env->code_ptr, (uint32_t)env);
         /* call exit_stub */
         code_emit8(env->code_ptr, 0xe8);
         addr = (uint32_t)exit_stub;
         jmp_offset = addr - (uint32_t)env->code_ptr - 4;
         code_emit32(env->code_ptr, jmp_offset);
-
-        /* leal %esp, 4(%esp) */
-        code_emit8(env->code_ptr, 0x8d);
-        code_emit8(env->code_ptr, 0x64); /*01 100 100 */
-        code_emit8(env->code_ptr, 0x24); /*00 100 100 */
-        code_emit8(env->code_ptr, 4);
+	/* leal %esp, 4(%esp) */
+	code_emit8(env->code_ptr, 0x8d);
+	code_emit8(env->code_ptr, 0x64); /*01 100 100 */
+	code_emit8(env->code_ptr, 0x24); /*00 100 100 */
+	code_emit8(env->code_ptr, 4);
 
         *patch_addr = env->code_ptr - patch_addr - 1;
         /* popf */
         code_emit8(env->code_ptr, 0x9d);
+
+        memcpy(env->code_ptr, (uint8_t *)(cgc->pc_ptr - cgc->insn_len), cgc->insn_len);
+        env->code_ptr += cgc->insn_len;
+    } else {
+        memcpy(env->code_ptr, (uint8_t *)(cgc->pc_ptr - cgc->insn_len), cgc->insn_len);
+        env->code_ptr += cgc->insn_len;
     }
-    memcpy(env->code_ptr, (uint8_t *)(cgc->pc_ptr - cgc->insn_len), cgc->insn_len);
-    env->code_ptr += cgc->insn_len;
     return true;
 }
 
@@ -1725,10 +1766,10 @@ static void cemit_count_tgt(CPUX86State *env, TranslationBlock *tb)
     uint8_t  *code_ptr_reserved;
     uint32_t jmp_offset;
 
-    /* modify by heyu */
-    /* a buffer to enable and disable profiling */
-    //  code_emit8(env->code_ptr, 0xe9u);
-    //code_emit32(env->code_ptr, 0);
+	/* modify by heyu */
+	/* a buffer to enable and disable profiling */
+	//	code_emit8(env->code_ptr, 0xe9u);
+	//code_emit32(env->code_ptr, 0);
 
     /* jmp to sieve_code_ptr */
     code_emit8(env->code_ptr, 0xe9u);
@@ -1746,7 +1787,7 @@ static void cemit_count_tgt(CPUX86State *env, TranslationBlock *tb)
     /* andl IND_THT_NODE_MAX, %ecx */
     code_emit8(env->sieve_code_ptr, 0x81);
     code_emit8(env->sieve_code_ptr, 0xe1); /* MODRM = 11 100 001 */
-    /* modify by heyu */
+	/* modify by heyu */
     code_emit32(env->sieve_code_ptr, (IND_TGT_SIZE - 1));
     /* addl TGT_NODE, %ecx */
     code_emit8(env->sieve_code_ptr, 0x81);
@@ -1782,22 +1823,214 @@ static void cemit_count_tgt(CPUX86State *env, TranslationBlock *tb)
 }
 #endif
 
-#if 0
+#ifdef VAR_TGT
+void clear_ind_tgt(CPUX86State *env)
+{
+    TranslationBlock *tb;
+    uint8_t *code_ptr_reserved;
+    int i;
+
+    //fprintf(stderr, "\n**%s**\n", __func__);
+    //fprintf(stderr, "******%d %d\n", env->g_ind_miss_count, env->ind_tb_index);
+
+    env->tgt_replace_count++;
+    env->g_ind_miss_count = 0;
+    for(i = 0; i < env->ind_tb_index; i++) {
+        tb = (TranslationBlock *)(env->ind_tbs[i]);
+        tb->jmp_ind_index = 0;
+
+        /* force replace ind_tgt */
+        code_ptr_reserved = env->code_ptr;
+        env->code_ptr = tb->ind_enter_sieve;
+		/* modify by heyu */
+		/* change jmp to 0 */
+        cemit_exit_tb(env, (uint32_t)tb, tb->type); /* FIXME */
+	//	code_emit8(env->code_ptr, 0xe9u);
+	//	code_emit32(env->code_ptr, 0);
+
+        env->code_ptr = code_ptr_reserved;
+    }
+}
+
+static void cemit_clear_ind_tgt(CPUX86State *env)
+{
+    uint32_t jmp_offset;
+
+    env->ind_tb_index = 0;
+    env->tgt_replace_count = 0;
+    clear_ind_tgt_stub = env->sieve_code_ptr;
+
+    /* pusha */
+    code_emit8(env->sieve_code_ptr, 0x60);
+    /* push env */
+    code_emit8(env->sieve_code_ptr, 0x68);
+    code_emit32(env->sieve_code_ptr, (uint32_t)env);
+    /* call clear_ind_tgt */
+    code_emit8(env->sieve_code_ptr, 0xe8);
+    jmp_offset = (uint32_t)clear_ind_tgt - (uint32_t)(env->sieve_code_ptr) - 4;
+    code_emit32(env->sieve_code_ptr, jmp_offset);
+    /* leal %esp, 4(%esp) */
+    code_emit8(env->sieve_code_ptr, 0x8d);
+    code_emit8(env->sieve_code_ptr, 0x64); /*01 100 100 */
+    code_emit8(env->sieve_code_ptr, 0x24); /*10 100 100 */
+    code_emit8(env->sieve_code_ptr, 4);
+    /* popa */
+    code_emit8(env->sieve_code_ptr, 0x61);
+    /* ret */
+    code_emit8(env->sieve_code_ptr, 0xc3); 
+}
+
+
+static void cemit_count_g_ind_miss(CPUX86State *env)
+{
+    uint32_t jmp_offset;
+    uint8_t *patch_addr;
+
+    /* jmp to sieve_code_ptr */
+    code_emit8(env->code_ptr, 0xe9u);
+    jmp_offset =  env->sieve_code_ptr - env->code_ptr - 4;
+    code_emit32(env->code_ptr, jmp_offset);
+
+    /* pushf */
+    code_emit8(env->sieve_code_ptr, 0x9c);
+    /* incl env->g_ind_miss_count */
+    code_emit8(env->sieve_code_ptr, 0xff);
+    code_emit8(env->sieve_code_ptr, 0x05); /* ModRM = 00 000 101b */
+    code_emit32(env->sieve_code_ptr, (uint32_t)&env->g_ind_miss_count);
+    /* cmpl ind_miss_count, TGT_REPLACE_TH*/
+    code_emit8(env->sieve_code_ptr, 0x81);
+    code_emit8(env->sieve_code_ptr, 0x3d); /* ModRM = 00 111 101b */
+    code_emit32(env->sieve_code_ptr, (uint32_t)&env->g_ind_miss_count);
+    code_emit32(env->sieve_code_ptr, TGT_REPLACE_TH);
+    /* jb less_than_th */
+    code_emit8(env->sieve_code_ptr, 0x72);
+    patch_addr =  env->sieve_code_ptr;
+    code_emit8(env->sieve_code_ptr, NEED_PATCH_8);
+	/* pusha */
+    code_emit8(env->sieve_code_ptr, 0x60);
+    /* call clear_ind_tgt_stub */
+    code_emit8(env->sieve_code_ptr, 0xe8);
+    jmp_offset = clear_ind_tgt_stub - env->sieve_code_ptr - 4;
+    code_emit32(env->sieve_code_ptr, jmp_offset);
+	/* popa */
+    code_emit8(env->sieve_code_ptr, 0x61);
+   
+
+    /* less_than_th: */
+    *patch_addr = env->sieve_code_ptr - patch_addr - 1;
+    /* popf */
+    code_emit8(env->sieve_code_ptr, 0x9d);
+    /* jmp back */
+    code_emit8(env->sieve_code_ptr, 0xe9);
+    jmp_offset =  env->code_ptr - env->sieve_code_ptr - 4;
+    code_emit32(env->sieve_code_ptr, jmp_offset);
+    
+    ABORT_IF((env->sieve_code_ptr - sieve_buffer > DEFAULT_SIEVE_BUFFER_SIZE),
+           "out of sieve buffer\n");
+}
+
+/* add by heyu */
+void clear_each_ind_tgt(CPUX86State *env, TranslationBlock *tb)
+{
+    uint8_t *code_ptr_reserved;
+
+    //fprintf(stderr, "\n**%s**\n", __func__);
+	tb->jmp_ind_index = 0;
+	tb->ind_replace_count++;
+	tb->ind_miss_count = 0;
+	/* force replace ind_tgt */
+	code_ptr_reserved = env->code_ptr;
+	env->code_ptr = tb->ind_enter_sieve;
+	/* modify by heyu */
+	/* change jmp to 0 */
+	cemit_exit_tb(env, (uint32_t)tb, tb->type); /* FIXME */
+	//code_emit8(env->code_ptr, 0xe9u);
+	//code_emit32(env->code_ptr, 0);
+
+	env->code_ptr = code_ptr_reserved;
+}
+
+/* add by heyu */
+static void cemit_count_each_tb_ind_miss(CPUX86State *env, TranslationBlock *tb)
+{
+	uint32_t jmp_offset;
+    uint8_t *patch_addr;
+
+	/* jmp to sieve_code_ptr */
+    code_emit8(env->code_ptr, 0xe9u);
+    jmp_offset =  env->sieve_code_ptr - env->code_ptr - 4;
+    code_emit32(env->code_ptr, jmp_offset);
+
+    /* pushf */
+    code_emit8(env->sieve_code_ptr, 0x9c);
+    /* incl cur_tb->ind_miss_count */
+    code_emit8(env->sieve_code_ptr, 0xff);
+    code_emit8(env->sieve_code_ptr, 0x05); /* ModRM = 00 000 101b */
+    code_emit32(env->sieve_code_ptr, (uint32_t)&tb->ind_miss_count);
+
+#if 1 
+    /* cmpl ind_miss_count, TGT_REP_EACH_TH*/
+    code_emit8(env->sieve_code_ptr, 0x81);
+    code_emit8(env->sieve_code_ptr, 0x3d); /* ModRM = 00 111 101b */
+    code_emit32(env->sieve_code_ptr, (uint32_t)&tb->ind_miss_count);
+    code_emit32(env->sieve_code_ptr, TGT_REP_EACH_TH);
+    /* jb less_than_th */
+    code_emit8(env->sieve_code_ptr, 0x72);
+    patch_addr =  env->sieve_code_ptr;
+    code_emit8(env->sieve_code_ptr, NEED_PATCH_8);
+
+	/* pusha */
+    code_emit8(env->sieve_code_ptr, 0x60);
+
+	/* push cur_tb */
+    code_emit8(env->sieve_code_ptr, 0x68);
+    code_emit32(env->sieve_code_ptr, (uint32_t)tb);
+	/* push env */
+    code_emit8(env->sieve_code_ptr, 0x68);
+    code_emit32(env->sieve_code_ptr, (uint32_t)env);
+    /* call clear_each_ind_tgt */
+    code_emit8(env->sieve_code_ptr, 0xe8);
+    jmp_offset = (uint32_t)clear_each_ind_tgt - (uint32_t)(env->sieve_code_ptr) - 4;
+    code_emit32(env->sieve_code_ptr, jmp_offset);
+    /* leal %esp, 8(%esp) */
+    code_emit8(env->sieve_code_ptr, 0x8d);
+    code_emit8(env->sieve_code_ptr, 0x64); /*01 100 100 */
+    code_emit8(env->sieve_code_ptr, 0x24); /*10 100 100 */
+    code_emit8(env->sieve_code_ptr, 8);
+
+	/* popa */
+    code_emit8(env->sieve_code_ptr, 0x61);
+   
+    /* less_than_th: */
+    *patch_addr = env->sieve_code_ptr - patch_addr - 1;
+#endif
+	/* popf */
+    code_emit8(env->sieve_code_ptr, 0x9d);
+    /* jmp back */
+    code_emit8(env->sieve_code_ptr, 0xe9);
+    jmp_offset =  env->code_ptr - env->sieve_code_ptr - 4;
+    code_emit32(env->sieve_code_ptr, jmp_offset);
+    
+    ABORT_IF((env->sieve_code_ptr - sieve_buffer > DEFAULT_SIEVE_BUFFER_SIZE),
+           "out of sieve buffer\n");
+
+}
+#endif
+
 #ifdef SWITCH_OPT
 bool emit_sa(CPUX86State *env, decode_t *ds)
 {
-    uint32_t addr;
-    uint32_t *addr_ptr;
-    uint32_t shadow_base;
-    uint32_t shadow_end;
-    uint8_t *patch_addr;
-    uint32_t jmp_offset;
-    //fprintf(stderr, "the displacement is \t%x\n", cur_ptn->displacement);
+	uint32_t addr;
+	uint32_t *addr_ptr;
+	uint32_t shadow_base;
+	uint32_t shadow_end;
+	uint8_t *patch_addr;
+	uint32_t jmp_offset;
+	//fprintf(stderr, "the displacement is \t%x\n", cur_ptn->displacement);
 
     cgc->j_ind_count++;
     ADD_INSNS_COUNT(cgc->insn_dyn_count, cur_tb->insn_count + 1);
     INCL_COUNT(jind_dyn_count);
-    INCL_COUNT(switch_type_jind);
 
 #ifdef PROF_JIND
     cemit_ind_count(env, ds);
@@ -1814,198 +2047,201 @@ bool emit_sa(CPUX86State *env, decode_t *ds)
     code_emit32(env->code_ptr, (uint32_t)cur_tb->func_addr);
 #endif
 
-    /* find shadow switch case table */
-    shadow_base = (uint32_t)env->sa_code_ptr;
-    env->sa_code_ptr = env->sa_code_ptr + cur_ptn->t_sum * 4;
+	/* find shadow switch case table */
+	shadow_base = (uint32_t)env->sa_code_ptr;
+	env->sa_code_ptr = env->sa_code_ptr + cur_ptn->t_sum * 4;
 
-    /* setup cur_tb->sa_base, cur_tb->shadow_base, cur_tb->sa_sum;*/
-    cur_tb->sa_base = cur_ptn->displacement;
-    cur_tb->shadow_base = shadow_base;
-    cur_tb->sa_entry_sum = cur_ptn->t_sum;
+	/* setup cur_tb->sa_base, cur_tb->shadow_base, cur_tb->sa_sum;*/
+	cur_tb->sa_base = cur_ptn->displacement;
+	cur_tb->shadow_base = shadow_base;
+	cur_tb->sa_entry_sum = cur_ptn->t_sum;
 
-    /* jmp *displacement(,index,scale) */
-    code_emit8(env->code_ptr, 0xff);
-    code_emit8(env->code_ptr, 0x24);
-    code_emit8(env->code_ptr, (cur_ptn->scale << 6) + (cur_ptn->reg << 3) + 0x5);
-    code_emit32(env->code_ptr, shadow_base); 
-    
-    patch_addr = env->code_ptr;
+	/* jmp *displacement(,index,scale) */
+	code_emit8(env->code_ptr, 0xff);
+	code_emit8(env->code_ptr, 0x24);
+	code_emit8(env->code_ptr, (cur_ptn->scale << 6) + (cur_ptn->reg << 3) + 0x5);
+	code_emit32(env->code_ptr, shadow_base); 
+	
+	patch_addr = env->code_ptr;
 
-    INCL_COUNT(jind_nothit_count);
+	INCL_COUNT(jind_nothit_count);
 
-    /* initial shadow table */
-    addr_ptr = (uint32_t *)shadow_base;
-    shadow_end = shadow_base +  cur_ptn->t_sum * 4;
-    while (addr_ptr < shadow_end)
-    {
-        *addr_ptr = (uint32_t) patch_addr;
-        addr_ptr++;
-    }
-    
-    /* jump back when predicting miss */
-    uint8_t  regs;
-    if (cur_ptn->reg == 0x1)
-        regs = 0x0;
-    else
-        regs = 0x1;
+	/* initial shadow table */
+	addr_ptr = (uint32_t *)shadow_base;
+	shadow_end = shadow_base +  cur_ptn->t_sum * 4;
+	while (addr_ptr < shadow_end)
+	{
+		*addr_ptr = (uint32_t) patch_addr;
+		addr_ptr++;
+	}
+	
+	/* jump back when predicting miss */
+	uint8_t  regs;
+	if (cur_ptn->reg == 0x1)
+		regs = 0x0;
+	else
+		regs = 0x1;
     /* push regs */
-    code_emit8(env->code_ptr, (0x5 << 4) + regs);
+	code_emit8(env->code_ptr, (0x5 << 4) + regs);
 
-    /* movl base(, index, scale), regs */
-    code_emit8(env->code_ptr, 0x8b);
-    code_emit8(env->code_ptr, (regs << 3) + 0x4);
-    code_emit8(env->code_ptr, (cur_ptn->scale << 6) + (cur_ptn->reg << 3) + 0x5);
-    code_emit32(env->code_ptr, cur_ptn->displacement);
-    
-    /* movl regs, (&env->eip) */
-    addr = (uint32_t) &(env->eip);
-    code_emit8(env->code_ptr, 0x89);
-    code_emit8(env->code_ptr, (regs << 3) + 0x5);
-    code_emit32(env->code_ptr, addr);
+	/* movl base(, index, scale), regs */
+	code_emit8(env->code_ptr, 0x8b);
+	code_emit8(env->code_ptr, (regs << 3) + 0x4);
+	code_emit8(env->code_ptr, (cur_ptn->scale << 6) + (cur_ptn->reg << 3) + 0x5);
+	code_emit32(env->code_ptr, cur_ptn->displacement);
+	
+	/* movl regs, (&env->eip) */
+	addr = (uint32_t) &(env->eip);
+	code_emit8(env->code_ptr, 0x89);
+	code_emit8(env->code_ptr, (regs << 3) + 0x5);
+	code_emit32(env->code_ptr, addr);
 
-    /* movl $ret_tb, (ret_tb) */
-    addr = (uint32_t)&(env->ret_tb);
-    code_emit8(env->code_ptr, 0xc7);
-    code_emit8(env->code_ptr, 0x05); /* ModRM = 00 000 101b */
-    code_emit32(env->code_ptr, addr);
-    code_emit32(env->code_ptr, (uint32_t)cur_tb);
+	/* movl $ret_tb, (ret_tb) */
+	addr = (uint32_t)&(env->ret_tb);
+	code_emit8(env->code_ptr, 0xc7);
+	code_emit8(env->code_ptr, 0x05); /* ModRM = 00 000 101b */
+	code_emit32(env->code_ptr, addr);
+	code_emit32(env->code_ptr, (uint32_t)cur_tb);
 
  
-    /* leal shadow(,index,scale), regs */
-    code_emit8(env->code_ptr, 0x8d);
-    code_emit8(env->code_ptr, (regs << 3) + 0x4);
-    code_emit8(env->code_ptr, (cur_ptn->scale << 6) + (cur_ptn->reg << 3) + 0x5);
-    code_emit32(env->code_ptr, shadow_base);
+	/* leal shadow(,index,scale), regs */
+	code_emit8(env->code_ptr, 0x8d);
+	code_emit8(env->code_ptr, (regs << 3) + 0x4);
+	code_emit8(env->code_ptr, (cur_ptn->scale << 6) + (cur_ptn->reg << 3) + 0x5);
+	code_emit32(env->code_ptr, shadow_base);
 
-    addr = (uint32_t)&(env->sa_shadow);
-    /* mov regs, (&env->sa_shadow) */
-    code_emit8(env->code_ptr, 0x89);
-    code_emit8(env->code_ptr, (regs << 3) + 0x5);
-    code_emit32(env->code_ptr, addr);
+	addr = (uint32_t)&(env->sa_shadow);
+	/* mov regs, (&env->sa_shadow) */
+	code_emit8(env->code_ptr, 0x89);
+	code_emit8(env->code_ptr, (regs << 3) + 0x5);
+	code_emit32(env->code_ptr, addr);
 
-    /* mov m_ind_type, (&env->ind_type) */
-    addr = (uint32_t)&(env->ind_type);
-    code_emit8(env->code_ptr, 0xc7);
-    code_emit8(env->code_ptr, 0x05); /* ModRM = 00 000 101b */
-    code_emit32(env->code_ptr, addr);
-    code_emit32(env->code_ptr, IND_TYPE_CALL);
+	/* mov m_ind_type, (&env->ind_type) */
+	addr = (uint32_t)&(env->ind_type);
+	code_emit8(env->code_ptr, 0xc7);
+	code_emit8(env->code_ptr, 0x05); /* ModRM = 00 000 101b */
+	code_emit32(env->code_ptr, addr);
+	code_emit32(env->code_ptr, IND_TYPE_CALL);
 
-    /* pop %ecx */
-    code_emit8(env->code_ptr, (0xb << 3) + regs);
+	/* pop %ecx */
+	code_emit8(env->code_ptr, (0xb << 3) + regs);
 
     /* jmp tb_epilogue */
     code_emit8(env->code_ptr, 0xe9u);
     jmp_offset = cgc->tb_ret_addr - env->code_ptr - 4;
     code_emit32(env->code_ptr, jmp_offset);
-    
+	
 
 
-    cur_ptn->flag = INITIAL;
-    cur_ptn->reg = 0;
-    cur_ptn->displacement = 0;
+	cur_ptn->flag = INITIAL;
+	cur_ptn->reg = 0;
+	cur_ptn->displacement = 0;
 
-    return false;
+	return false;
 }
 
 bool emit_call_table(CPUX86State *env, decode_t *ds)
 {
-    uint32_t addr;
-    uint32_t *addr_ptr;
-    uint32_t shadow_base;
-    uint32_t shadow_end;
-    uint8_t *patch_addr;
-    uint32_t jmp_offset;
-    //fprintf(stderr, "the displacement is \t%x\n", cur_ptn->displacement);
+	uint32_t addr;
+	uint32_t *addr_ptr;
+	uint32_t shadow_base;
+	uint32_t shadow_end;
+	uint8_t *patch_addr;
+	uint32_t jmp_offset;
+	//fprintf(stderr, "the displacement is \t%x\n", cur_ptn->displacement);
     cgc->call_ind_count++;
 
     ADD_INSNS_COUNT(cgc->insn_dyn_count, cur_tb->insn_count + 1);
     INCL_COUNT(cind_dyn_count);
-    INCL_COUNT(switch_type_cind);
 
 #ifdef PROF_JIND
     cemit_ind_count(env, ds);
 #endif
 
-    /* find shadow switch case table */
-    shadow_base = (uint32_t)env->sa_code_ptr;
-    env->sa_code_ptr = env->sa_code_ptr +  cur_ptn->t_sum * 4;
 
-    /* setup cur_tb->sa_base, cur_tb->shadow_base, cur_tb->sa_sum;*/
-    cur_tb->sa_base = cur_ptn->displacement;
-    cur_tb->shadow_base = shadow_base;
-    cur_tb->sa_entry_sum = cur_ptn->t_sum;
+
+	/* find shadow switch case table */
+	shadow_base = (uint32_t)env->sa_code_ptr;
+	env->sa_code_ptr = env->sa_code_ptr +  cur_ptn->t_sum * 4;
+
+	/* setup cur_tb->sa_base, cur_tb->shadow_base, cur_tb->sa_sum;*/
+	cur_tb->sa_base = cur_ptn->displacement;
+	cur_tb->shadow_base = shadow_base;
+	cur_tb->sa_entry_sum = cur_ptn->t_sum;
 
 #if 1 
     /* push next insn */
     code_emit8(env->code_ptr, 0x68);
     code_emit32(env->code_ptr, cgc->pc_ptr);
 
-    /* jmp *displacement(,index,scale) */
-    code_emit8(env->code_ptr, 0xff);
-    code_emit8(env->code_ptr, 0x24);
-    code_emit8(env->code_ptr, (cur_ptn->scale << 6) + (cur_ptn->reg << 3) + 0x5);
-    code_emit32(env->code_ptr, shadow_base); 
-    
-    patch_addr = env->code_ptr;
+	/* jmp *displacement(,index,scale) */
+	code_emit8(env->code_ptr, 0xff);
+	code_emit8(env->code_ptr, 0x24);
+	code_emit8(env->code_ptr, (cur_ptn->scale << 6) + (cur_ptn->reg << 3) + 0x5);
+	code_emit32(env->code_ptr, shadow_base); 
+	
+	patch_addr = env->code_ptr;
 
-    /* initial shadow table */
-    addr_ptr = (uint32_t *)shadow_base;
-    shadow_end = shadow_base +  cur_ptn->t_sum * 4;
-    while (addr_ptr < shadow_end)
-    {
-        *addr_ptr = (uint32_t) patch_addr;
-        addr_ptr++;
-    }
-    
-    /* jump back when predicting miss */
+	INCL_COUNT(cind_nothit_count);
+
+	/* initial shadow table */
+	addr_ptr = (uint32_t *)shadow_base;
+	shadow_end = shadow_base +  cur_ptn->t_sum * 4;
+	while (addr_ptr < shadow_end)
+	{
+		*addr_ptr = (uint32_t) patch_addr;
+		addr_ptr++;
+	}
+	
+	/* jump back when predicting miss */
 
     /* push %ecx */
     code_emit8(env->code_ptr, 0x51);
 
-    /* movl base(, index, scale), %ecx */
-    code_emit8(env->code_ptr, 0x8b);
-    code_emit8(env->code_ptr, 0x0c); /* 00 001 100 */
-    code_emit8(env->code_ptr, (cur_ptn->scale << 6) + (cur_ptn->reg << 3) + 0x5);
-    code_emit32(env->code_ptr, cur_ptn->displacement);
-    
-    /* movl %ecx, (&env->eip) */
-    addr = (uint32_t) &(env->eip);
-    code_emit8(env->code_ptr, 0x89);
-    code_emit8(env->code_ptr, 0x0d);
-    code_emit32(env->code_ptr, addr);
+	/* movl base(, index, scale), %ecx */
+	code_emit8(env->code_ptr, 0x8b);
+	code_emit8(env->code_ptr, 0x0c); /* 00 001 100 */
+	code_emit8(env->code_ptr, (cur_ptn->scale << 6) + (cur_ptn->reg << 3) + 0x5);
+	code_emit32(env->code_ptr, cur_ptn->displacement);
+	
+	/* movl %ecx, (&env->eip) */
+	addr = (uint32_t) &(env->eip);
+	code_emit8(env->code_ptr, 0x89);
+	code_emit8(env->code_ptr, 0x0d);
+	code_emit32(env->code_ptr, addr);
 
-    /* movl $ret_tb, (ret_tb) */
-    addr = (uint32_t)&(env->ret_tb);
-    code_emit8(env->code_ptr, 0xc7);
-    code_emit8(env->code_ptr, 0x05); /* ModRM = 00 000 101b */
-    code_emit32(env->code_ptr, addr);
-    code_emit32(env->code_ptr, (uint32_t)cur_tb);
+	/* movl $ret_tb, (ret_tb) */
+	addr = (uint32_t)&(env->ret_tb);
+	code_emit8(env->code_ptr, 0xc7);
+	code_emit8(env->code_ptr, 0x05); /* ModRM = 00 000 101b */
+	code_emit32(env->code_ptr, addr);
+	code_emit32(env->code_ptr, (uint32_t)cur_tb);
 
-    /* pop %ecx */
-    code_emit8(env->code_ptr, 0x59);
+	/* pop %ecx */
+	code_emit8(env->code_ptr, 0x59);
     /* push %ecx */
     code_emit8(env->code_ptr, 0x51);
-    /* leal shadow(,index,scale), %ecx */
-    code_emit8(env->code_ptr, 0x8d);
-    code_emit8(env->code_ptr, 0x0c);
-    code_emit8(env->code_ptr, (cur_ptn->scale << 6) + (cur_ptn->reg << 3) + 0x5);
-    code_emit32(env->code_ptr, shadow_base);
+	/* leal shadow(,index,scale), %ecx */
+	code_emit8(env->code_ptr, 0x8d);
+	code_emit8(env->code_ptr, 0x0c);
+	code_emit8(env->code_ptr, (cur_ptn->scale << 6) + (cur_ptn->reg << 3) + 0x5);
+	code_emit32(env->code_ptr, shadow_base);
 
-    addr = (uint32_t)&(env->sa_shadow);
-    /* mov %ecx, (&env->sa_shadow) */
-    code_emit8(env->code_ptr, 0x89);
-    code_emit8(env->code_ptr, 0x0d);
-    code_emit32(env->code_ptr, addr);
+	addr = (uint32_t)&(env->sa_shadow);
+	/* mov %ecx, (&env->sa_shadow) */
+	code_emit8(env->code_ptr, 0x89);
+	code_emit8(env->code_ptr, 0x0d);
+	code_emit32(env->code_ptr, addr);
 
-    /* mov m_ind_type, (&env->ind_type) */
-    addr = (uint32_t)&(env->ind_type);
-    code_emit8(env->code_ptr, 0xc7);
-    code_emit8(env->code_ptr, 0x05); /* ModRM = 00 000 101b */
-    code_emit32(env->code_ptr, addr);
-    code_emit32(env->code_ptr, IND_TYPE_CALL);
+	/* mov m_ind_type, (&env->ind_type) */
+	addr = (uint32_t)&(env->ind_type);
+	code_emit8(env->code_ptr, 0xc7);
+	code_emit8(env->code_ptr, 0x05); /* ModRM = 00 000 101b */
+	code_emit32(env->code_ptr, addr);
+	code_emit32(env->code_ptr, IND_TYPE_CALL);
 
-    /* pop %ecx */
-    code_emit8(env->code_ptr, 0x59);
+	/* pop %ecx */
+	code_emit8(env->code_ptr, 0x59);
 
     /* jmp tb_epilogue */
     code_emit8(env->code_ptr, 0xe9u);
@@ -2014,95 +2250,93 @@ bool emit_call_table(CPUX86State *env, decode_t *ds)
 #endif
 
 
-    cur_ptn->flag = INITIAL;
-    cur_ptn->reg = 0;
-    cur_ptn->displacement = 0;
+	cur_ptn->flag = INITIAL;
+	cur_ptn->reg = 0;
+	cur_ptn->displacement = 0;
 
-    return false;
+	return false;
 }
-
 static int is_what(decode_t *tds)
 {
-    if(*(tds->instr) == 0x8b && tds->modrm.parts.mod == 2)
-    {
-        cur_ptn->scale = 0x0;
-        cur_ptn->reg = tds->modrm.parts.reg;
-        //cur_ptn->scale = 0x0;
-        cur_ptn->displacement = tds->displacement;
-        return IS_MOV;
-    }
-    else if(*(tds->instr) == 0xff && tds->modrm.parts.mod == 3 && 
-        cur_ptn->flag == IS_MOV && tds->modrm.parts.rm == cur_ptn->reg)
-        return IS_JMP;
+	if(*(tds->instr) == 0x8b && tds->modrm.parts.mod == 2)
+	{
+		cur_ptn->scale = 0x0;
+		cur_ptn->reg = tds->modrm.parts.reg;
+		//cur_ptn->scale = 0x0;
+		cur_ptn->displacement = tds->displacement;
+		return IS_MOV;
+	}
+	else if(*(tds->instr) == 0xff && tds->modrm.parts.mod == 3 && 
+		cur_ptn->flag == IS_MOV && tds->modrm.parts.rm == cur_ptn->reg)
+		return IS_JMP;
 
-    /*ff 24 95 f0 84 04 08    jmp    *0x80484f0(,%edx,4) */
-    else if(*(tds->instr) == 0xff && tds->modrm.parts.mod == 0 &&
-        tds->modrm.parts.rm == 4 && tds->sib.parts.base == 5) 
-    {   /* must eliminate the call instructions */
+	/*ff 24 95 f0 84 04 08    jmp    *0x80484f0(,%edx,4) */
+	else if(*(tds->instr) == 0xff && tds->modrm.parts.mod == 0 &&
+		tds->modrm.parts.rm == 4 &&	tds->sib.parts.base == 5) 
+	{	/* must eliminate the call instructions */
 
-        cur_ptn->scale = tds->sib.parts.ss;
-        cur_ptn->reg = tds->sib.parts.index;
-        cur_ptn->displacement = tds->displacement;
-        if (tds->modrm.parts.reg == 2)
-            return IS_CALL;
-        else if (tds->modrm.parts.reg == 4 || tds->modrm.parts.reg == 5)
-            return IS_JMP;
-    }
-    
-    return INITIAL;
+		cur_ptn->scale = tds->sib.parts.ss;
+		cur_ptn->reg = tds->sib.parts.index;
+		cur_ptn->displacement = tds->displacement;
+		if (tds->modrm.parts.reg == 2)
+			return IS_CALL;
+		else if (tds->modrm.parts.reg == 4 || tds->modrm.parts.reg == 5)
+			return IS_JMP;
+	}
+	
+	return INITIAL;
 
 }
 
 static uint32_t parse_sa(decode_t *tds)
 {
-    int ret;
-    uint32_t t_sum;
-    uint32_t *addr_ptr;
+	int ret;
+	uint32_t t_sum;
+	uint32_t *addr_ptr;
 
-    ret = is_what(tds);
+	ret = is_what(tds);
 
-    cur_ptn->flag = ret;
+	cur_ptn->flag = ret;
 
 
-    if(cur_ptn->flag == IS_JMP)
-    {
-        addr_ptr = (uint32_t *) cur_ptn->displacement;
-        t_sum = 0;
+	if(cur_ptn->flag == IS_JMP)
+	{
+		addr_ptr = (uint32_t *) cur_ptn->displacement;
+		t_sum = 0;
 
-        while (*addr_ptr < 0x9000000 && *addr_ptr > 0x8000000)
-        {
-            addr_ptr++;
-            t_sum++;
-        }
-        cur_ptn->t_sum = t_sum;
-        if (t_sum > 0)
-        {   
-            sa_num++;
-            tds->emitfn = emit_sa;
-            return IS_JMP;
-        }
-    }
-    else if (cur_ptn->flag == IS_CALL)
-    {
-        addr_ptr = (uint32_t *) cur_ptn->displacement;
-        t_sum = 0;
+		while (*addr_ptr < 0x9000000 && *addr_ptr > 0x8000000)
+		{
+			addr_ptr++;
+			t_sum++;
+		}
+		cur_ptn->t_sum = t_sum;
+		if (t_sum > 0)
+		{	
+			sa_num++;
+			tds->emitfn = emit_sa;
+			return IS_JMP;
+		}
+	}
+	else if (cur_ptn->flag == IS_CALL)
+	{
+		addr_ptr = (uint32_t *) cur_ptn->displacement;
+		t_sum = 0;
 
-        while (*addr_ptr < 0xa000000 && *addr_ptr > 0x7000000)
-        {
+		while (*addr_ptr < 0xa000000 && *addr_ptr > 0x7000000)
+		{
 
-            addr_ptr++;
-            t_sum++;
-        }
-        if (t_sum > 0)
-        {
-            cur_ptn->t_sum = t_sum;
-            cur_ptn->t_sum = 400;
-            call_table++;
-        //  tds->emitfn = emit_call_table;
-            return IS_CALL;
-        }
-    }
-    return INITIAL;
+			addr_ptr++;
+			t_sum++;
+		}
+		if (t_sum > 0)
+		{
+			cur_ptn->t_sum = t_sum;
+			cur_ptn->t_sum = 400;
+			call_table++;
+			tds->emitfn = emit_call_table;
+			return IS_CALL;
+		}
+	}
+	return INITIAL;
 }
-#endif
 #endif

@@ -405,7 +405,6 @@ abi_long target_mmap(abi_ulong start, abi_ulong len, int prot,
         goto the_end;
     real_start = start & qemu_host_page_mask;
 
-
     /* When mapping files into a memory area larger than the file, accesses
        to pages beyond the file size will cause a SIGBUS. 
 
@@ -549,7 +548,6 @@ abi_long target_mmap(abi_ulong start, abi_ulong len, int prot,
                 goto fail;
         }
     }
-
  the_end1:
     page_set_flags(start, start + len, prot | PAGE_VALID);
  the_end:

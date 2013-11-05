@@ -1,31 +1,18 @@
 #ifndef __OPT_DEF_H__
 #define __OPT_DEF_H__
 
+#define SWITCH_OPT
 #define SIEVE_OPT
 #define SEP_SIEVE
-//#define COUNT_PROF
-//#define DEBUG
 
-//#define SHA_RODATA
+#define VAR_TGT
+//#define VAR_TGT2
+#define VAR_TGT_EACH
+#define TGT_REPLACE_TH	10000
+#define TGT_REP_EACH_TH	10000
+#define IND_TB_MAX	4096
 
-#ifdef SHA_RODATA
-//    #define LAZY_SHA_OPT
-//    #define DATA_PROTECT
-    //#define PARSE_SWITCH_CASE_CMP_NUM
-    #define SWITCH_OPT
-    #define SHA_THRESHOLD 1000
-    #define PAGESIZE    4096
-    #define GET_PAGE(v) (((int)v) & (~(PAGESIZE -1)))
-    #define REG_OPT
-    #define MAP_DATA_SEG
-#endif
-//#define DEBUG_SHA
-#ifdef DEBUG_SHA
-	#define SHA_DBG(...) fprintf(stderr, __VA_ARGS__);
-#else
-	#define SHA_DBG(...) ((void )0);
-#endif
-
+//#define MRU_OPT
 #define J_IND_OPT
 #define CALL_IND_OPT
 //#define RC_IND_OPT
@@ -34,21 +21,18 @@
 #endif
 
 #ifdef IND_OPT
-    #define IND_SLOT_MAX 	3	
     //#define RETRANS_IND
 #endif
-
-#ifdef RETRANS_IND
-    #define RETRANS_THRESHOLD	100000
-    #define RETRANS_STACK_MAX	4096 * 4
-    #define PATH_DEPTH_MAX	5
-#endif
+#define RETRANS_THRESHOLD	100000
+#define RETRANS_STACK_MAX	4096 * 4
 
 #define TB_FROM_MAX	16
-#define PATH_DEPTH 4
+#define IND_SLOT_MAX 	3	
+#define PATH_DEPTH_MAX	5
+#define PATH_DEPTH 8
 
 //#define IND_TGT_TH
-#define	IND_THRESHOLD	30
+#define	IND_THRESHOLD	100
 
 #define RET_CACHE
 //#define CALL_RAS_OPT
@@ -57,7 +41,7 @@
 #endif
 
 #define TRANS_NEXT
-//#define PATCH_IN_TB
+///#define PATCH_IN_TB
 
 #define PATH_STACK_SIZE	64
 #define RETRANS_TB_TAG	0x10
@@ -66,13 +50,20 @@
 //#define ACROSS_JMP
 //#define USE_RET_TO_ENTER_SIEVE
 #define USE_CX_TO_CMP_RETCACHE
+//#define STATIC_PROF
 
+#ifdef STATIC_PROF
+    #define PROF_JIND
+    #define PROF_CIND
+#endif
+
+//#define COUNT_PROF
 #ifdef COUNT_PROF
     #ifdef J_IND_OPT
-        //#define PROF_JIND
+        #define PROF_JIND
     #endif
     #ifdef CALL_IND_OPT
-        //#define PROF_CIND
+        #define PROF_CIND
     #endif
     //#define COUNT_INSN
     //#define PROF_RET
@@ -82,7 +73,7 @@
     #define PROF_IND
 #endif
 
-//#define PROF_PATH_WO_IND
+///#define PROF_PATH_WO_IND
 #define PATH_IND_TAG	0xdeadbeef
 
 #define STAT_NODE_MAX	2048 * 8

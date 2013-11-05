@@ -16,27 +16,16 @@
 #include "decode.h"
 #include "emit.h"
 
-#define CANNOT_OPT 0 
-#define CAN_OPT 1
-
-#define DISP_MEM 3
-#define REG_MEM 4
-#define MEM 5
-#define REG 6 
-
-#define IS_CALL 7
+#define IS_MOV 1
+#define IS_JMP 2
+#define IS_CALL 3
 #define INITIAL 0
-    #define INCL_RING(c)\
-    do {\
-        c = (c + 1) % 6;\
-    } while(0)
 
 extern uint8_t *code_gen_ptr;
 extern uint8_t *code_gen_buffer;
 extern uint8_t *sieve_buffer;
 extern uint8_t *switch_case_buffer;
 extern uint8_t code_gen_prologue[];
-extern uint8_t code_temp_start[];
 extern int prolog_count;
 extern int nb_tbs;
 extern int nb_ind_tgt_nodes;
@@ -168,7 +157,13 @@ typedef struct code_gen_context {
 
     uint64_t cind_nothit_count;
     uint64_t jind_nothit_count;
-	uint64_t opt_jind_nothit_count;
+	/* for mru */
+	uint64_t jind_mru_hit_count;
+	uint64_t cind_mru_hit_count;
+	uint64_t mru_replace_count;
+
+    uint64_t jind_dyn_count;
+    uint64_t cind_dyn_count;
 #endif
     stat_node stat_nodes[STAT_NODE_MAX];
     uint32_t stat_node_count;
@@ -193,5 +188,17 @@ void lazy_patch(CPUX86State *env);
 void note_patch(CPUX86State *env, uint8_t *at, uint8_t *to, uint8_t *tb, 
                 uint32_t func_addr, uint32_t tb_tag);
 
+#ifdef SWITCH_OPT
+typedef struct sa_ptn {
+	 int flag;
+	 int scale;
+	 int reg;
+	 long displacement;
+	 uint32_t t_sum;
+} sa_ptn;
+extern sa_ptn *cur_ptn;
+extern int sa_num;
+extern int call_table;
+#endif
 
 #endif

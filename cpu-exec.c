@@ -60,113 +60,10 @@ void cpu_x86_fsave(CPUX86State *s, target_ulong ptr, int data32)
     abort();
 }
 
-#if 0
-/* only works if protected mode and not VM86. seg_reg must be != R_CS */
-void helper_load_seg(CPUX86State *env, int seg_reg, int selector)
-{
-    uint32_t e1, e2;
-    int cpl, dpl, rpl;
-    SegmentCache *dt;
-    int index;
-    target_ulong ptr;
-
-    selector &= 0xffff;
-    cpl = env->hflags & HF_CPL_MASK;
-    if ((selector & 0xfffc) == 0) {
-        /* null selector case */
-        if (seg_reg == R_SS
-#ifdef TARGET_X86_64
-                && (!(env->hflags & HF_CS64_MASK) || cpl == 3)
-#endif
-           ) {
-            raise_exception_err(env, EXCP0D_GPF, 0);
-        }
-        cpu_x86_load_seg_cache(env, seg_reg, selector, 0, 0, 0);
-    } else {
-
-        if (selector & 0x4) {
-            dt = &env->ldt;
-        } else {
-            dt = &env->gdt;
-        }
-        index = selector & ~7;
-        if ((index + 7) > dt->limit) {
-            raise_exception_err(env, EXCP0D_GPF, selector & 0xfffc);
-        }
-        ptr = dt->base + index;
-        e1 = cpu_ldl_kernel(env, ptr);
-        e2 = cpu_ldl_kernel(env, ptr + 4);
-
-        if (!(e2 & DESC_S_MASK)) {
-            raise_exception_err(env, EXCP0D_GPF, selector & 0xfffc);
-        }
-        rpl = selector & 3;
-        dpl = (e2 >> DESC_DPL_SHIFT) & 3;
-        if (seg_reg == R_SS) {
-            /* must be writable segment */
-            if ((e2 & DESC_CS_MASK) || !(e2 & DESC_W_MASK)) {
-                raise_exception_err(env, EXCP0D_GPF, selector & 0xfffc);
-            }
-            if (rpl != cpl || dpl != cpl) {
-                raise_exception_err(env, EXCP0D_GPF, selector & 0xfffc);
-            }
-        } else {
-            /* must be readable segment */
-            if ((e2 & (DESC_CS_MASK | DESC_R_MASK)) == DESC_CS_MASK) {
-                raise_exception_err(env, EXCP0D_GPF, selector & 0xfffc);
-            }
-
-            if (!(e2 & DESC_CS_MASK) || !(e2 & DESC_C_MASK)) {
-                /* if not conforming code, test rights */
-                if (dpl < cpl || dpl < rpl) {
-                    raise_exception_err(env, EXCP0D_GPF, selector & 0xfffc);
-                }
-            }
-        }
-
-        if (!(e2 & DESC_P_MASK)) {
-            if (seg_reg == R_SS) {
-                raise_exception_err(env, EXCP0C_STACK, selector & 0xfffc);
-            } else {
-                raise_exception_err(env, EXCP0B_NOSEG, selector & 0xfffc);
-            }
-        }
-
-        /* set the access bit if not already set */
-        if (!(e2 & DESC_A_MASK)) {
-            e2 |= DESC_A_MASK;
-            cpu_stl_kernel(env, ptr + 4, e2);
-        }
-
-        cpu_x86_load_seg_cache(env, seg_reg, selector,
-                get_seg_base(e1, e2),
-                get_seg_limit(e1, e2),
-                e2);
-#if 0
-        qemu_log("load_seg: sel=0x%04x base=0x%08lx limit=0x%08lx flags=%08x\n",
-                selector, (unsigned long)sc->base, sc->limit, sc->flags);
-#endif
-    }
-}
-
-#endif
-
-
-
 void cpu_x86_load_seg(CPUX86State *s, int seg_reg, int selector)
 {
-#if 0
-    if (!(env->cr[0] & CR0_PE_MASK) || (env->eflags & VM_MASK)) {
-        selector &= 0xffff;
-        cpu_x86_load_seg_cache(env, seg_reg, selector,
-                (selector << 4), 0xffff, 0);
-    } else {
-        helper_load_seg(env, seg_reg, selector);
-    }
-#else
     /* dummy */
     abort();
-#endif
 }
 void cpu_x86_frstor(CPUX86State *s, target_ulong ptr, int data32)
 {
@@ -232,7 +129,7 @@ static TranslationBlock *get_next_tb(CPUX86State *env, uint32_t cur_pc,
         /* tb doesn't exist */
         ///fprintf(stderr, "ind tb_tag: 0x%x\n", tb_tag);
         /* if no translated code available, then translate it now */
-        if (env->ind_type != NOT_IND && env->ind_type != TYPE_SYSCALL) {
+        if (env->ind_type != NOT_IND) {
             switch(env->ind_type) {
               case IND_TYPE_CALL:
               case IND_TYPE_CALL_SP:
@@ -256,8 +153,6 @@ static TranslationBlock *get_next_tb(CPUX86State *env, uint32_t cur_pc,
             }
         } else {
             if(prev_tb != NULL) {
-                if (cur_pc == 0x814fd8e)
-                    fprintf(stderr, "*************0x814fd8e***************\n");
                 tb = make_tb(env, cur_pc, prev_tb->func_addr, tb_tag);
             } else {
                 tb = make_tb(env, cur_pc, 0, tb_tag);
@@ -295,7 +190,24 @@ static void patch_ind_opt(TranslationBlock *prev_tb, TranslationBlock *tb)
     tgt_addr = env->eip;
 
     if(prev_tb->jmp_ind_index < IND_SLOT_MAX) {
+#ifdef STATIC_PROF
+        int pos, i;
+        //pos = find_profile_node(prev_tb);
+        pos = prev_tb->prof_pos;
+        if(pos != NOT_FOUND) {
+            for(i = 0; i < IND_SLOT_MAX; i++) {
+                tgt_addr = cgc->info_nodes[pos].tgt_addr[i];
+                if(tgt_addr == 0) break;
+                tb = get_next_tb(env, tgt_addr, prev_tb);
+                patch_jmp_target(prev_tb, tgt_addr, (uint32_t)tb->tc_ptr);
+            }
+        } else {
+            /* fill jmp_target */
+            patch_jmp_target(prev_tb, tgt_addr, (uint32_t)tb->tc_ptr);
+        }
+#else
         patch_jmp_target(prev_tb, tgt_addr, (uint32_t)tb->tc_ptr);
+#endif
     } else {
         /* jmp_target was already filled, add enter_sieve now */
         ind_patch_sieve(env, prev_tb->ind_enter_sieve);
@@ -305,6 +217,9 @@ static void patch_ind_opt(TranslationBlock *prev_tb, TranslationBlock *tb)
 
 int prolog_count = 0;
 
+#ifdef VAR_TGT
+void clear_ind_tgt(CPUX86State *env);
+#endif
 
 int cpu_exec(CPUState *env1)
 {
@@ -318,6 +233,9 @@ int cpu_exec(CPUState *env1)
     env->tb_tag = 0;
     prev_tb = 0; /* force lookup of first TB */
     new_tb_count = -500;
+#ifdef SWITCH_OPT
+	env->sa_shadow = 0;
+#endif
 
 #ifdef RETRANS_IND
     env->has_ind = false;
@@ -325,6 +243,14 @@ int cpu_exec(CPUState *env1)
 
     for(;;) {
         prolog_count++;
+
+#ifdef VAR_TGT
+        new_tb_count++;
+        if(new_tb_count >= 300) {
+            clear_ind_tgt(env1);
+            new_tb_count = 0;
+        }
+#endif
 
         tb = get_next_tb(env, env->eip, (TranslationBlock *)prev_tb);
 
@@ -336,8 +262,51 @@ int cpu_exec(CPUState *env1)
 				env->ind_type = NOT_IND;
             } else {
 #ifdef IND_OPT
-                patch_ind_opt((TranslationBlock *)prev_tb, tb);
-                prev_tb = 0;
+#ifdef SWITCH_OPT
+				if (env->sa_shadow != 0)
+				{
+					/* from switch case optimization */
+					uint32_t *base_addr;
+					uint32_t *addr;
+					TranslationBlock *prev = (TranslationBlock *)prev_tb;
+					addr = (uint32_t *)(env->sa_shadow);
+					*addr = tb->tc_ptr;
+					//fprintf(stderr, "shadow table base is %x\n", prev->shadow_base);
+					//fprintf(stderr, "shadow table entry is %x\n", env->sa_shadow);
+
+					/* fill the same content entry */
+					int i = 0;
+					int num = 0;
+					base_addr = (uint32_t *)(prev->sa_base);
+					addr = (uint32_t *)(prev->shadow_base);
+				/*	if (prev->sa_entry_sum > 10)
+					{
+						for (i = 0; i < prev->sa_entry_sum; i++)
+						{
+							if (*(base_addr + i) == tb->pc)
+							{
+								*(addr + i) = tb->tc_ptr;
+								num ++;
+							}
+						}
+					}
+					*/
+			
+					//fprintf(stderr, "replication num is %u \t\n:", num);
+					num = 0;
+
+					env->sa_shadow = 0;
+					/* because i have set prev_tb->sa_base, prev_tb->shadow_base, prev_tb->sa_entry_num
+					 * so, we can use tb->pc to traverse the base table, to find the repeated entry in the table.
+					 * then, we can fill the related entry in the shadow table with tb->tc_ptr
+					 * by doing this, we can reduce some cost due to exit_tb from the same entry 
+					 */
+				}
+				else /* form exit_tb */
+#endif
+					patch_ind_opt((TranslationBlock *)prev_tb, tb);
+
+				prev_tb = 0;
 #endif
             }
         }
@@ -369,7 +338,8 @@ int cpu_exec(CPUState *env1)
        
         /* enter code cache */
         prev_tb = tcg_qemu_tb_exec(tc_ptr);
-        
+
+        //fprintf(stderr, "prev_tb = 0x%x pc = 0x%x\n", prev_tb, env->eip);
 
         env->current_tb = NULL;
     } /* for(;;) */

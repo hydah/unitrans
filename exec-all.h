@@ -120,7 +120,7 @@ void tlb_flush(CPUState *env, int flush_global);
 #define USE_DIRECT_JUMP
 #endif
 
-#define DEFAULT_CODE_GEN_BUFFER_SIZE (128 * 1024 * 1024)
+#define DEFAULT_CODE_GEN_BUFFER_SIZE (256 * 1024 * 1024)
 #define DEFAULT_SIEVE_BUFFER_SIZE (64 * 1024 * 1024)
 
 #ifdef SWITCH_OPT
@@ -150,7 +150,6 @@ struct TranslationBlock {
     uint32_t insn_count;
     uint32_t icount;
     uint32_t ind_miss_count;
-    uint32_t shadow_fail_count;
 	uint32_t ind_replace_count;
 
     uint8_t *tc_ptr;    /* pointer to the translated code */
@@ -186,10 +185,6 @@ struct TranslationBlock {
 	uint32_t sa_base;
 	uint32_t shadow_base;
 	uint32_t sa_entry_sum;
-	uint8_t *shadow_code_start;
-    uint8_t *shadow_profile_start;
-	uint32_t shadow_bound[2];
-    uint32_t ind_dyn_count;
 #endif
 
     bool     has_ind;

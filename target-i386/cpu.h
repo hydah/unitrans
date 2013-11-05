@@ -600,7 +600,6 @@ enum enum_ind_type {
     IND_TYPE_JMP_SP,
 	IND_SWITCH_TYPE,
     IND_TYPE_RET_SP,
-    TYPE_SYSCALL,
 };
     
 /* add for switch case */
@@ -636,14 +635,13 @@ typedef struct CPUX86State {
     target_ulong regs[CPU_NB_REGS];
     target_ulong eip;
     target_ulong eflags; /* eflags register. During CPU emulation, CC
-                            flags and DF are set to zero because they are
-                            stored elsewhere */
-    uint32_t hflags; /* TB flags, see HF_xxx constants. These flags
-                        are known at translation time. */
-
+                        flags and DF are set to zero because they are
+                        stored elsewhere */
     target_ulong target_tc;
     uint32_t esp_tmp;
     uint8_t *code_ptr;
+	uint32_t mru_src_addr;
+	uint32_t mru_dest_addr;
     uint32_t ret_tb;
     uint32_t tb_tag;
     uint32_t patch_num;
@@ -679,6 +677,14 @@ typedef struct CPUX86State {
     sieve_entry sieve_rettable[SIEVE_SIZE];
     sieve_entry sieve_jmptable[SIEVE_SIZE];
 #endif
+#ifdef SWITCH_OPT
+	sa_table direct_sa[SA_SIZE];
+	uint32_t direct_sa_num;
+	uint32_t sa_shadow;
+	uint32_t sa_base_entry;
+	uint8_t *sa_code_ptr;
+#endif
+
     uint32_t ind_dest;
     uint32_t ind_type;
 #ifdef RETRANS_IND
@@ -716,71 +722,12 @@ CPUX86State *cpu_x86_init(const char *cpu_model);
 int cpu_x86_exec(CPUX86State *s);
 void cpu_x86_close(CPUX86State *s);
 void x86_cpu_list (FILE *f, int (*cpu_fprintf)(FILE *f, const char *fmt, ...),
-        const char *optarg);
+                   const char *optarg);
 void x86_cpudef_setup(void);
 
 int cpu_get_pic_interrupt(CPUX86State *s);
 /* MSDOS compatibility mode FPU exception support */
 void cpu_set_ferr(CPUX86State *s);
-
-/* this function must always be used to load data in the segment
- *    cache: it synchronizes the hflags with the segment cache values */
-static inline void cpu_x86_load_seg_cache(CPUX86State *env,
-        int seg_reg, unsigned int selector,
-        target_ulong base,
-        unsigned int limit,
-        unsigned int flags)
-{
-    SegmentCache *sc;
-    unsigned int new_hflags;
-
-    sc = &env->segs[seg_reg];
-    sc->selector = selector;
-    sc->base = base;
-    sc->limit = limit;
-    sc->flags = flags;
-
-    /* update the hidden flags */
-    {
-        if (seg_reg == R_CS) {
-#ifdef TARGET_X86_64
-            if ((env->hflags & HF_LMA_MASK) && (flags & DESC_L_MASK)) {
-                /* long mode */
-                env->hflags |= HF_CS32_MASK | HF_SS32_MASK | HF_CS64_MASK;
-                env->hflags &= ~(HF_ADDSEG_MASK);
-            } else
-#endif
-            {
-                /* legacy / compatibility case */
-                new_hflags = (env->segs[R_CS].flags & DESC_B_MASK)
-                    >> (DESC_B_SHIFT - HF_CS32_SHIFT);
-                env->hflags = (env->hflags & ~(HF_CS32_MASK | HF_CS64_MASK)) |
-                    new_hflags;
-            }
-        }
-        new_hflags = (env->segs[R_SS].flags & DESC_B_MASK)
-            >> (DESC_B_SHIFT - HF_SS32_SHIFT);
-        if (env->hflags & HF_CS64_MASK) {
-            /* zero base assumed for DS, ES and SS in long mode */
-        } else if (!(env->cr[0] & CR0_PE_MASK) ||
-                (env->eflags & VM_MASK) ||
-                !(env->hflags & HF_CS32_MASK)) {
-            /* XXX: try to avoid this test. The problem comes from the
-             *                fact that is real mode or vm86 mode we only modify the
-             *                               'base' and 'selector' fields of the segment cache to go
-             *                                              faster. A solution may be to force addseg to one in
-             *                                                             translate-i386.c. */
-            new_hflags |= HF_ADDSEG_MASK;
-        } else {
-            new_hflags |= ((env->segs[R_DS].base |
-                        env->segs[R_ES].base |
-                        env->segs[R_SS].base) != 0) <<
-                HF_ADDSEG_SHIFT;
-        }
-        env->hflags = (env->hflags &
-                ~(HF_SS32_MASK | HF_ADDSEG_MASK)) | new_hflags;
-    }
-}
 
 
 /* cpuid.c */

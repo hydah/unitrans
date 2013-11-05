@@ -83,8 +83,6 @@ uint8_t code_gen_prologue[2048] code_gen_section;
 uint8_t *code_gen_buffer;
 uint8_t *sieve_buffer;
 uint8_t *switch_case_buffer;
-// add by heyu
-uint8_t code_temp_start[1024];
 
 static unsigned long code_gen_buffer_size;
 /* threshold to flush the translated code buffer */
@@ -234,7 +232,6 @@ static void code_gen_alloc(unsigned long tb_size)
         (TCG_MAX_OP_SIZE * OPC_MAX_SIZE);
     code_gen_max_blocks = code_gen_buffer_size / CODE_GEN_AVG_BLOCK_SIZE;
     tbs = qemu_malloc(code_gen_max_blocks * sizeof(TranslationBlock));
-    map_exec(code_temp_start, sizeof(code_temp_start));
 }
 
 /* Must be called before using the QEMU cpus. 'tb_size' is the size

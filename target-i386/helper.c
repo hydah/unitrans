@@ -49,7 +49,6 @@ CPUX86State *cpu_x86_init(const char *cpu_model)
     CPUX86State *env;
 
     env = qemu_mallocz(sizeof(CPUX86State));
-    fprintf(stderr, "the env is %x\n", env);
     return env;
 }
 
