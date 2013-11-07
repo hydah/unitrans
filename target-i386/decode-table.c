@@ -939,7 +939,7 @@ CONST_TABLE OpCode float_df [16] = {
   { 0x5u,  "fild-q",  2, 7,  0, 0,  0, 0,  emit_normal,   INST_NORMAL,  1048577,  0 },
   { 0x6u,  "fbstp-y",  2, 8,  0, 0,  0, 0,  emit_normal,   INST_NORMAL,  1048577,  0 },
   { 0x7u,  "fistp-q",  2, 7,  0, 0,  0, 0,  emit_normal,   INST_NORMAL,  1048577,  0 },
-  { 0x8u,  "reserved",  0, 0,  0, 0,  0, 0,  (reserved),   INST_RESERVED,  512,  0 },
+  { 0x8u,  "reserved",  0, 0,  0, 0,  0, 0, emit_normal,   INST_NORMAL,  1048577,  0 },
   { 0x9u,  "reserved",  0, 0,  0, 0,  0, 0,  (reserved),   INST_RESERVED,  512,  0 },
   { 0xau,  "reserved",  0, 0,  0, 0,  0, 0,  (reserved),   INST_RESERVED,  512,  0 },
   { 0xbu,  "reserved",  0, 0,  0, 0,  0, 0,  (reserved),   INST_RESERVED,  512,  0 },

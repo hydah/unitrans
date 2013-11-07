@@ -308,6 +308,7 @@ int prolog_count = 0;
 void handle_syscall(int trapnr)
 {
     abi_ulong pc;
+    //fprintf(stderr, "this is %s\n", __FUNCTION__);
     switch(trapnr) {
         case 0x80:
             /* linux syscall from int $0x80 */
