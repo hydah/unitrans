@@ -652,7 +652,10 @@ void prof_stat(CPUX86State *env)
     }
     fprintf(stderr, "tb_not_trans: \t%d\n", tb_not_trans);
 
+#ifdef COUNT_INSN
     fprintf(stderr, "insn_dyn: \t%llu\n", cgc->insn_dyn_count);
+    fprintf(stderr, "IB_dyn_rate:\t%s\n", calc_perc(cgc->jind_dyn_count + cgc->cind_dyn_count, cgc->insn_dyn_count));
+#endif
     fprintf(stderr, "ret_dyn: \t%llu\n", cgc->ret_dyn_count);
     fprintf(stderr, "rc_miss_dyn: \t%llu\n", cgc->rc_miss_count);
 #ifdef RC_IND_OPT

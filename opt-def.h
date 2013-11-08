@@ -3,7 +3,8 @@
 
 #define SIEVE_OPT
 #define SEP_SIEVE
-//#define COUNT_PROF
+#define COUNT_PROF
+#define COUNT_INSN
 //#define DEBUG
 
 //#define SHA_RODATA

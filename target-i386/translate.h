@@ -156,6 +156,8 @@ typedef struct code_gen_context {
 #ifdef COUNT_PROF
     /* dynamic insns count */
     uint64_t insn_dyn_count;
+    uint64_t cind_dyn_count;
+    uint64_t jind_dyn_count;
     uint64_t ret_dyn_count;
     uint64_t ras_dyn_count;
     uint64_t ras_miss_count;

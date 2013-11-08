@@ -1651,6 +1651,7 @@ bool emit_jmp_near_mem(CPUX86State *env, decode_t *ds)
     cgc->j_ind_count++;
     cur_tb->type = IND_TYPE_JMP;
     INCL_COUNT(jind_dyn_count);
+    ADD_INSNS_COUNT(cgc->insn_dyn_count, cur_tb->insn_count + 1);
     /* mov func_addr, (&env->ind_dest) */
     addr = (uint32_t)&(env->ind_dest);
     code_emit8(env->code_ptr, 0xc7);
@@ -1677,6 +1678,7 @@ bool emit_int(CPUX86State *env, decode_t *ds)
 {
     uint32_t jmp_offset, addr;
     uint8_t *patch_addr;
+    ADD_INSNS_COUNT(cgc->insn_dyn_count, cur_tb->insn_count + 1);
 
     
     /* copy insn to codecache */
