@@ -6,7 +6,6 @@
 #define COUNT_PROF
 #define COUNT_INSN
 //#define DEBUG
-
 //#define SHA_RODATA
 
 #ifdef SHA_RODATA
@@ -75,7 +74,7 @@
     #ifdef CALL_IND_OPT
         //#define PROF_CIND
     #endif
-    //#define COUNT_INSN
+//#define COUNT_INSN
     //#define PROF_RET
 #endif
 

@@ -206,7 +206,7 @@ CONST_TABLE OpCode twoByteOpcodes [256] = {
   { 0xbu,  "reserved",  0, 0,  0, 0,  0, 0,  emit_normal,   INST_RESERVED,  512,  0 },
   { 0xcu,  "reserved",  0, 0,  0, 0,  0, 0,  (reserved),   INST_RESERVED,  512,  0 },
   { 0xdu,  "reserved",  0, 0,  0, 0,  0, 0,  (reserved),   INST_RESERVED,  512,  0 },
-  { 0xeu,  "reserved",  0, 0,  0, 0,  0, 0,  (reserved),   INST_RESERVED,  512,  0 },
+  { 0xeu,  "MMX/SSE/SSE2",  0, 0,  0, 0,  0, 0,  emit_normal,   INST_NORMAL,  0,  0 },
   { 0xfu,  "reserved",  0, 0,  0, 0,  0, 0,  (reserved),   INST_RESERVED,  512,  0 },
   { 0x10u,  "MMX/SSE/SSE2",  2, 0,  0, 0,  0, 0,  emit_normal,   INST_NORMAL,  1048577,  0 },
   { 0x11u,  "MMX/SSE/SSE2",  2, 0,  0, 0,  0, 0,  emit_normal,   INST_NORMAL,  1048577,  0 },
