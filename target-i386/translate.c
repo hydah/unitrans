@@ -1667,7 +1667,7 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr, uint32_t 
     cur_tb->disp = displacement;
     cur_tb->scale = scale;
 
-    upper = bss_bound - displacement;
+    upper = text_bound - displacement;
     upper = upper >> scale;
 
 #if 0
@@ -1870,15 +1870,32 @@ bool emit_call_near_mem(CPUX86State *env, decode_t *ds)
         dest_based_on_esp = true;
     }
 
-    ABORT_IF((dest_based_on_esp == true), "error dest_based on esp\n");
+    //ABORT_IF((dest_based_on_esp == true), "error dest_based on esp\n");
+	if (dest_based_on_esp == true) {
+		/* Push (dest) */
+		emit_push_rm(&env->code_ptr, ds);
+		/* push (%esp) */
+		code_emit8(env->code_ptr, 0xff);
+		code_emit8(env->code_ptr, 0x34); /* 00 110 100 */
+		code_emit8(env->code_ptr, 0x24);/* 00 100 100 */
 
+		/* mov %ecx, 4(%esp) */
+		code_emit8(env->code_ptr, 0xc7);
+		code_emit8(env->code_ptr, 0x44); /* 01 000 100 */
+		code_emit8(env->code_ptr, 0x24); /* 00 100 100 */
+		code_emit8(env->code_ptr, 0x4);
+		code_emit32(env->code_ptr, cgc->pc_ptr);
 
-    /* Push cgc->pc_ptr */
-    code_emit8(env->code_ptr, 0x68u);     /* PUSH */
-    code_emit32(env->code_ptr, cgc->pc_ptr);
+	}
+	else {
+		/* Push cgc->pc_ptr */
+		code_emit8(env->code_ptr, 0x68u);     /* PUSH */
+		code_emit32(env->code_ptr, cgc->pc_ptr);
 
-    /* Push (dest) */
-    emit_push_rm(&env->code_ptr, ds);
+		/* Push (dest) */
+		emit_push_rm(&env->code_ptr, ds);
+	}
+
 
 #ifdef RET_CACHE
     uint8_t *patch_addr_rc;
@@ -2258,11 +2275,12 @@ bool emit_int(CPUX86State *env, decode_t *ds)
 {
     uint32_t jmp_offset, addr;
     uint8_t *patch_addr;
+    uint8_t *patch2;
 
     //printf("int cgc->pc_ptr = 0x%x\n", cgc->pc_ptr);
     /* copy insn to codecache */
-        if (ds->instr[1] == 0x80) {
-            /* pushf */
+    if (ds->instr[1] == 0x80) {
+        /* pushf */
         code_emit8(env->code_ptr, 0x9c); 
         /* cmp %eax ,__NR_exit_group) */
         code_emit8(env->code_ptr, 0x3d);
@@ -2271,19 +2289,37 @@ bool emit_int(CPUX86State *env, decode_t *ds)
         code_emit8(env->code_ptr, 0x75);
         patch_addr = env->code_ptr;
         code_emit8(env->code_ptr, NEED_PATCH_8);
-    /* push env */
-    code_emit8(env->code_ptr, 0x68);
-    code_emit32(env->code_ptr, (uint32_t)env);
+	    /* push env */
+	    code_emit8(env->code_ptr, 0x68);
+	    code_emit32(env->code_ptr, (uint32_t)env);
         /* call exit_stub */
         code_emit8(env->code_ptr, 0xe8);
         addr = (uint32_t)exit_stub;
         jmp_offset = addr - (uint32_t)env->code_ptr - 4;
         code_emit32(env->code_ptr, jmp_offset);
-    /* leal %esp, 4(%esp) */
-    code_emit8(env->code_ptr, 0x8d);
-    code_emit8(env->code_ptr, 0x64); /*01 100 100 */
-    code_emit8(env->code_ptr, 0x24); /*00 100 100 */
-    code_emit8(env->code_ptr, 4);
+
+        /* leal %esp, 4(%esp) */
+        code_emit8(env->code_ptr, 0x8d);
+        code_emit8(env->code_ptr, 0x64); /*01 100 100 */
+        code_emit8(env->code_ptr, 0x24); /*00 100 100 */
+        code_emit8(env->code_ptr, 4);
+
+        *patch_addr = env->code_ptr - patch_addr - 1;
+
+        /* cmp %eax ,__NR_sigaction) */
+        code_emit8(env->code_ptr, 0x3d);
+        code_emit32(env->code_ptr, __NR_rt_sigaction);
+        /* jne */
+        code_emit8(env->code_ptr, 0x75);
+        patch_addr = env->code_ptr;
+        code_emit8(env->code_ptr, NEED_PATCH_8);
+        /* popf */
+        code_emit8(env->code_ptr, 0x9d);
+        /*jmp patch2 */
+        code_emit8(env->code_ptr, 0xeb);
+        patch2 = env->code_ptr;
+        code_emit8(env->code_ptr, NEED_PATCH_8);
+
 
         *patch_addr = env->code_ptr - patch_addr - 1;
         /* popf */
@@ -2291,6 +2327,7 @@ bool emit_int(CPUX86State *env, decode_t *ds)
 
         memcpy(env->code_ptr, (uint8_t *)(cgc->pc_ptr - cgc->insn_len), cgc->insn_len);
         env->code_ptr += cgc->insn_len;
+        *patch2= env->code_ptr - patch2 - 1;
     } else {
         memcpy(env->code_ptr, (uint8_t *)(cgc->pc_ptr - cgc->insn_len), cgc->insn_len);
         env->code_ptr += cgc->insn_len;
