@@ -678,13 +678,13 @@ void prof_stat(CPUX86State *env)
     fprintf(stderr, "   cind_mem: \t\t%llu\n", cgc->cind_mem);
     fprintf(stderr, "   cind_reg: \t\t%llu\n", cgc->cind_reg);
 
-#ifdef SHA_RODATA
+#ifdef DTT_OPT
     fprintf(stderr, "more than one entry tb: %d\n", nb_tb_jmp_reg);
-    fprintf(stderr, "shadow_opt_ind_count: \t%llu\n", cgc->opt_jind_dyn_count + cgc->opt_cind_dyn_count);
+    fprintf(stderr, "shadow_opt_ind_count: \t%llu\n", cgc->opt_sha_dyn_count);
     fprintf(stderr, "shadow_opt_ind_rate: \t%s%%\n", 
-                     calc_perc(cgc->opt_jind_dyn_count + cgc->opt_cind_dyn_count, cgc->jind_dyn_count + cgc->cind_dyn_count));
+                     calc_perc(cgc->opt_sha_dyn_count, cgc->jind_dyn_count + cgc->cind_dyn_count));
     fprintf(stderr, "shadow_opt_faild_ind_rate: \t%s%%\n", 
-                     calc_perc(cgc->opt_failed_jind_dyn_count + cgc->opt_failed_cind_dyn_count, cgc->jind_dyn_count + cgc->cind_dyn_count));
+                     calc_perc(cgc->opt_failed_sha_dyn_count, cgc->jind_dyn_count + cgc->cind_dyn_count));
 #endif
 
 #if 0

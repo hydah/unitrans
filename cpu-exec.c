@@ -213,7 +213,7 @@ int cpu_exec(CPUState *env1)
     env->tb_tag = 0;
     prev_tb = 0; /* force lookup of first TB */
     new_tb_count = -500;
-#ifdef SWITCH_OPT
+#ifdef DTT_OPT
 	env->sa_shadow = 0;
 #endif
 
@@ -234,7 +234,7 @@ int cpu_exec(CPUState *env1)
 				env->ind_type = NOT_IND;
             } else {
 #ifdef IND_OPT
-#ifdef SWITCH_OPT
+#ifdef DTT_OPT
 				if (env->sa_shadow != 0)
 				{
 					/* from switch case optimization */

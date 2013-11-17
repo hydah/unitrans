@@ -6,11 +6,12 @@
 #define COUNT_PROF
 
 //#define DEBUG_MMAP
-#define SHA_RODATA
-#ifdef SHA_RODATA
-    #define SWITCH_OPT
+#define DTT_OPT
+#ifdef DTT_OPT
     #define PAGESIZE    4096
     #define GET_PAGE(v) (((int)v) & (~(PAGESIZE -1)))
+    #define REG_OPT
+    //#define MAP_DATA_SEG
 #endif
 
 //#define DEBUG_SHA

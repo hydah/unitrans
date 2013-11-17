@@ -23,7 +23,7 @@
 #include "ind-prof.h"
 #include <sys/mman.h>
 
-#ifdef SHA_RODATA
+#ifdef DTT_OPT
 sa_ptn *cur_ptn;
 
 uint8_t *text_base, *bss_base;
@@ -196,7 +196,7 @@ static inline void ret_cache_proc_init(CPUX86State *env)
 }
 #endif
 
-#ifdef SHA_RODATA
+#ifdef DTT_OPT
 static void fill_page_with_int(uint8_t *page)
 {
     int i;
@@ -317,7 +317,7 @@ void codecache_prologue_init(CPUX86State *env)
     cgc = (code_gen_context *)malloc(sizeof(code_gen_context));
     memset(cgc, 0, sizeof(code_gen_context));
     
-#ifdef SHA_RODATA
+#ifdef DTT_OPT
     cur_ptn = (sa_ptn *)malloc(sizeof(sa_ptn));
     memset(cur_ptn, 0, sizeof(sa_ptn));
 #endif
@@ -405,7 +405,7 @@ void codecache_prologue_init(CPUX86State *env)
     ret_cache_proc_init(env);
 #endif
 
-#ifdef SHA_RODATA
+#ifdef DTT_OPT
     mysig_init();
     g_env = env;
     memset(instr_ring, 0, sizeof(instr_ring));
@@ -572,10 +572,6 @@ void gen_target_code(CPUState *env, TranslationBlock *tb)
         cgc->insn_len = ds->decode_eip - cgc->pc_ptr;
         cgc->pc_ptr = ds->decode_eip;
 
-#ifdef SWITCH_OPT
-        //uint32_t ret;
-        //ret = parse_sa(ds);
-#endif
         cont_trans = (ds->emitfn)(env, ds);
 
         cur_tb->insn_count++;
@@ -1387,7 +1383,7 @@ bool emit_call_disp(CPUX86State *env, decode_t *ds)
     return trans_next(env, ds, false);
 }
 
-#ifdef SHA_RODATA
+#ifdef DTT_OPT
 static int parse_mov(decode_t *tds, sa_ptn *ptn_ptr)
 {
     decode_t ds, *dsp = &ds;
@@ -1501,7 +1497,7 @@ static int judge_type(decode_t *tds, sa_ptn *ptn_ptr)
                     ptn_ptr->scale = 0;
                     ptn_ptr->reg = tds->modrm.parts.rm; 
                     ptn_ptr->displacement = tds->displacement;
-                    return CANNOT_OPT;
+                    return CAN_OPT;
                 }
                 else if(tds->modrm.parts.rm !=4 && tds->modrm.parts.rm != 5)
                 {//(reg)
@@ -1533,6 +1529,7 @@ static int judge_type(decode_t *tds, sa_ptn *ptn_ptr)
                     return CAN_OPT;
                 }
                 return CANNOT_OPT;
+#ifdef REG_OPT
             case 3://reg
                 cur_tb->is_jmp_reg = 1;
 
@@ -1542,6 +1539,7 @@ static int judge_type(decode_t *tds, sa_ptn *ptn_ptr)
                 ptn_ptr->displacement = 0;
 
                 return parse_mov(tds, ptn_ptr);
+#endif
             default:
                 return CANNOT_OPT;
         }
@@ -1550,7 +1548,7 @@ static int judge_type(decode_t *tds, sa_ptn *ptn_ptr)
     return CANNOT_OPT;
 }
 
-#define USE_BOUND
+//#define USE_BOUND
 static void cemit_cancel_shadow(CPUX86State *env, TranslationBlock *tb, uint32_t reg_con)
 {
     uint8_t *code_ptr_reserved;
@@ -1667,41 +1665,39 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr, uint32_t 
     cur_tb->disp = displacement;
     cur_tb->scale = scale;
 
+#ifdef MAP_DATA_SEG
+    upper = bss_bound - displacement;
+#else
     upper = text_bound - displacement;
-    upper = upper >> scale;
+#endif
 
-#if 0
+    upper = upper >> scale;
+ 
     if (flag == MEM) {
-        if (upper > 0) {
-            if (ind_type == IND_TYPE_JMP) {
-                INCL_COUNT(opt_jind_dyn_count);
-                INCL_COUNT(opt_jind_mem);
-            } 
-            else if (ind_type == IND_TYPE_CALL) {
-                INCL_COUNT(opt_cind_dyn_count);
-                INCL_COUNT(opt_cind_mem);
-            }
+#ifdef MAP_DATA_SEG
+        if (bss_bound  > displacement) {
+#else
+        if (text_bound > displacement) {
+#endif
+            INCL_COUNT(opt_sha_dyn_count);
 
             code_emit8(env->code_ptr, 0xff);
             code_emit8(env->code_ptr, 0x25);
-            code_emit32(env->code_ptr, displacement + ss_offset);
+            code_emit32(env->code_ptr, displacement + text_offset);
         }
 
-        if (ind_type == IND_TYPE_JMP){
-            INCL_COUNT(opt_failed_jind_dyn_count);
-            INCL_COUNT(opt_failed_jind_mem);
-        }
-
-        else if (ind_type == IND_TYPE_CALL){
-            INCL_COUNT(opt_failed_cind_dyn_count);
-            INCL_COUNT(opt_failed_cind_mem);
-        }
+        INCL_COUNT(opt_failed_sha_dyn_count);
         return;
     }
+
+#ifdef MAP_DATA_SEG
+    if (reg == R_EBP || bss_bound < displacement) {
+#else
+    if (reg == R_EBP || text_bound < displacement) { 
 #endif
-    if (reg == R_EBP || upper < 0) {
         return;
     }
+
 #ifdef USE_BOUND
 #if 0
     /* save cur_tb */
@@ -1726,8 +1722,7 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr, uint32_t 
     code_emit8(env->code_ptr, (reg << 3) | 0x5); /* 00 reg 101 */
     code_emit32(env->code_ptr, (uint32_t)cur_tb->shadow_bound);
 
-#if 1
-    INCL_COUNT(opt_jind_dyn_count);
+    INCL_COUNT(opt_sha_dyn_count);
     if(ind_type == IND_TYPE_CALL) {
         /* ind_call perform "push(dest)" for ret-cache, rollback the SP here */
         /* leal %esp, 4(%esp) */
@@ -1751,7 +1746,6 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr, uint32_t 
         code_emit8(env->code_ptr, (0xa << 4) + reg);
         code_emit32(env->code_ptr, displacement + text_offset);
     }
-#endif
 
 #else
     uint8_t *patch_here;
@@ -1789,11 +1783,7 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr, uint32_t 
         code_emit8(env->code_ptr, 4);
     }
 
-    if (ind_type ==  IND_TYPE_JMP) {
-        INCL_COUNT(opt_jind_dyn_count);
-    } else if (ind_type == IND_TYPE_CALL) {
-        INCL_COUNT(opt_cind_dyn_count);
-    }
+    INCL_COUNT(opt_sha_dyn_count);
 
     /* jmp *offset(,index,scale) */
     /* offset =  displacement + ss_offset 
@@ -1819,38 +1809,16 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr, uint32_t 
         code_emit8(env->code_ptr, 0x9d);
     }
 
-    if (ind_type ==  IND_TYPE_JMP) {
-        INCL_COUNT(opt_failed_jind_dyn_count);
-    }
-    else if (ind_type == IND_TYPE_CALL) {
-        INCL_COUNT(opt_failed_cind_dyn_count);
-    }
+    INCL_COUNT(opt_failed_sha_dyn_count);
 
     cemit_prof_shadow_fail(env, cur_tb);
 #endif
 }
-#endif // end of SHA_RODATA
+#endif // end of DTT_OPT
 
 /* extra code size = 23(rc_1) + 30(sieve) + 49(rc_2) = 102 */
 bool emit_call_near_mem(CPUX86State *env, decode_t *ds)
 {
-#if 0 
-#ifdef DEBUG_DISAS
-    if (qemu_loglevel_mask(CPU_LOG_TB_IN_ASM)) {
-        int disas_flags;
-        //qemu_log("IN: [size=%d] %s tb_tag: 0x%x\n",
-                //           ds->pInstr - ds->instr,
-                //         lookup_symbol(cgc->pc_start), cur_tb->tb_tag);
-        disas_flags = 0;
-        log_target_disas(cgc->pc_ptr - cgc->insn_len, cgc->insn_len, disas_flags);
-    }
-    fprintf(logfile, "ds->modrm.byte is %x\n", ds->modrm.byte);
-    fprintf(logfile, "ds->sib.byte is %x\n", ds->sib);
-    fprintf(logfile, "ds->displacement is %x\n", ds->displacement);
-    fprintf(logfile, "ds->immediate is %x\n", ds->immediate);
-    fprintf(logfile, "\n");
-#endif
-#endif
     uint32_t addr;
 
     cgc->call_ind_count++;
@@ -1926,7 +1894,7 @@ bool emit_call_near_mem(CPUX86State *env, decode_t *ds)
     code_emit8(env->code_ptr, 0x59);
 #endif
 
-#ifdef SHA_RODATA
+#ifdef DTT_OPT
     uint32_t retno;
     sa_ptn cur_ptn, *ptn_ptr = &cur_ptn;
 
@@ -2195,24 +2163,6 @@ bool emit_jmp(CPUX86State *env, decode_t *ds)
 
 bool emit_jmp_near_mem(CPUX86State *env, decode_t *ds)
 {
-#if 0 
-#ifdef DEBUG_DISAS
-    if (qemu_loglevel_mask(CPU_LOG_TB_IN_ASM)) {
-        int disas_flags;
-        //qemu_log("IN: [size=%d] %s tb_tag: 0x%x\n",
-                //           ds->pInstr - ds->instr,
-                //         lookup_symbol(cgc->pc_start), cur_tb->tb_tag);
-        disas_flags = 0;
-        log_target_disas(cgc->pc_ptr - cgc->insn_len, cgc->insn_len, disas_flags);
-    }
-    fprintf(logfile, "ds->modrm.byte is %x\n", ds->modrm.byte);
-    fprintf(logfile, "ds->sib.byte is %x\n", ds->sib);
-    fprintf(logfile, "ds->displacement is %x\n", ds->displacement);
-    fprintf(logfile, "ds->immediate is %x\n", ds->immediate);
-    fprintf(logfile, "\n");
-#endif
-#endif
-        
     uint32_t addr;
     cgc->j_ind_count++;
     cur_tb->type = IND_TYPE_JMP;
@@ -2226,7 +2176,7 @@ bool emit_jmp_near_mem(CPUX86State *env, decode_t *ds)
     code_emit32(env->code_ptr, addr);
     code_emit32(env->code_ptr, (uint32_t)cur_tb->func_addr);
 
-#ifdef SHA_RODATA 
+#ifdef DTT_OPT 
     /* first, at the translation period,judge if the instuction's patten is jmp *disp(,reg,scale) or not
      * if it is, then translate this instruction with rodata shadowing method,
      * or go with the common method.

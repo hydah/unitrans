@@ -322,7 +322,7 @@ TranslationBlock *make_tb(CPUState *env, target_ulong pc,
     tb->func_addr = func_addr;
     tb->tb_tag = tb_tag;
 
-#ifdef SHA_RODATA
+#ifdef DTT_OPT
     tb->is_jmp_reg = 0;
     tb->jmp_reg_mto = 0;
 #endif

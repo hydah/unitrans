@@ -16,7 +16,7 @@
 #include "decode.h"
 #include "emit.h"
 
-#ifdef SHA_RODATA
+#ifdef DTT_OPT
 	#define IS_JMP 0
 	#define IS_CALL 1
 
@@ -173,22 +173,19 @@ typedef struct code_gen_context {
     uint64_t jind_nothit_count;
     uint64_t jind_dyn_count;
     uint64_t cind_dyn_count;
-#ifdef SHA_RODATA
+#ifdef DTT_OPT 
 	uint64_t jind_disp_mem;
 	uint64_t jind_reg_mem;
 	uint64_t jind_mem;
 	uint64_t jind_reg;
 
-	uint64_t opt_jind_dyn_count;
-    uint64_t opt_failed_jind_dyn_count;
+	uint64_t opt_sha_dyn_count;
+    uint64_t opt_failed_sha_dyn_count;
 
 	uint64_t cind_disp_mem;
 	uint64_t cind_reg_mem;
 	uint64_t cind_mem;
 	uint64_t cind_reg;
-
-	uint64_t opt_cind_dyn_count;
-	uint64_t opt_failed_cind_dyn_count;
 #endif
 #endif
     stat_node stat_nodes[STAT_NODE_MAX];
@@ -214,7 +211,7 @@ void lazy_patch(CPUX86State *env);
 void note_patch(CPUX86State *env, uint8_t *at, uint8_t *to, uint8_t *tb, 
                 uint32_t func_addr, uint32_t tb_tag);
 
-#ifdef SWITCH_OPT
+#ifdef DTT_OPT
 typedef struct sa_ptn {
 	 int flag;
 	 int scale;

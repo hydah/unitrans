@@ -183,7 +183,7 @@ struct TranslationBlock {
     bool     retransed;
     uint32_t retrans_count;
     uint32_t retrans_count_max;
-#ifdef SHA_RODATA
+#ifdef DTT_OPT
     int is_jmp_reg;
     int jmp_reg_mto;
 

@@ -405,7 +405,7 @@ abi_long target_mmap(abi_ulong start, abi_ulong len, int prot,
         goto the_end;
     real_start = start & qemu_host_page_mask;
 
-#ifdef SHA_RODATA
+#ifdef DTT_OPT
 extern uint8_t *text_base, *bss_base;
 extern uint8_t *text_sha_base, *bss_sha_base;
 extern uint32_t text_offset, bss_offset;
@@ -417,22 +417,30 @@ extern int sha_flag;
         sha_flag = 0;
 		text_base = start;
 		text_bound = (uint32_t)text_base + len;
+
+		if ((text_sha_base = malloc(len + PAGESIZE)) == NULL)
+			abort();
+
+	    text_sha_base = GET_PAGE(text_sha_base) + PAGESIZE;
+		text_offset = (uint32_t)text_sha_base - (uint32_t)text_base;
         fprintf(stderr, "text_base is %x \n", text_base);
         fprintf(stderr, "text_bound is %x \n", text_bound);
 	}
+#ifdef MAP_DATA_SEG
     sha_flag++;
     if (sha_flag == 3) {
-		if ((text_sha_base = malloc(len + (uint32_t)text_bound - (uint32_t)text_base + PAGESIZE)) == NULL)
-			abort();
-
 		bss_base = start;
 		bss_bound = (uint32_t)bss_base + len;
+
+		if ((text_sha_base = malloc(bss_bound - (uint32_t)text_base + PAGESIZE)) == NULL)
+			abort();
+
 	    text_sha_base = GET_PAGE(text_sha_base) + PAGESIZE;
 		text_offset = (uint32_t)text_sha_base - (uint32_t)text_base;
         fprintf(stderr, "bss_base is %x \n", bss_base);
         fprintf(stderr, "bss_bound is %x \n", bss_bound);
     }
-
+#endif
 #endif
 
     /* When mapping files into a memory area larger than the file, accesses
@@ -578,12 +586,17 @@ extern int sha_flag;
                 goto fail;
         }
     }
-#ifdef SHA_RODATA
+#ifdef DTT_OPT
+#ifndef MAP_DATA_SEG
+    if (start == 0x08048000) {
+        mprotect(text_sha_base, len, PROT_NONE);
+    }
+#else
     if (sha_flag == 3) {
 		mprotect(text_sha_base, (uint32_t)bss_bound - (uint32_t)text_base, PROT_NONE);
 	}
-
-#endif
+#endif //end of MAP_DATA_SEG
+#endif //end of DTT_OPT
  the_end1:
     page_set_flags(start, start + len, prot | PAGE_VALID);
  the_end:
