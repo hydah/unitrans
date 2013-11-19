@@ -554,9 +554,10 @@ void gen_target_code(CPUState *env, TranslationBlock *tb)
 
     ///printf("start tb_gen_code cgc->pc_ptr = 0x%x\n", cgc->pc_ptr);
     for(num_insns = 0; ;num_insns++) {
-
+#ifdef DTT_OPT
         INCL_RING(cur_flag);
         instr_ring[cur_flag] = cgc->pc_ptr;
+#endif
 
         simple_disas_insn(ds, cgc->pc_ptr);
 
@@ -1497,7 +1498,7 @@ static int judge_type(decode_t *tds, sa_ptn *ptn_ptr)
                     ptn_ptr->scale = 0;
                     ptn_ptr->reg = tds->modrm.parts.rm; 
                     ptn_ptr->displacement = tds->displacement;
-                    return CAN_OPT;
+                    return CANNOT_OPT;
                 }
                 else if(tds->modrm.parts.rm !=4 && tds->modrm.parts.rm != 5)
                 {//(reg)
@@ -1553,11 +1554,12 @@ static void cemit_cancel_shadow(CPUX86State *env, TranslationBlock *tb, uint32_t
     uint8_t *code_ptr_reserved;
     uint32_t address;
     address = (reg_con << tb->scale) + tb->disp;
-
+#if 1 
     fprintf(stderr, "\ncancel shadow: tb->pc = 0x%x\n", tb->pc);
     fprintf(stderr, "cancel shadow: reg content = 0x%x\n", reg_con);
     fprintf(stderr, "cancel shadow: tb->reg = 0x%x\n", tb->reg);
     fprintf(stderr, "cancel shadow: address = 0x%x\n", address);
+#endif
 
     //cur_tb = tb;
     code_ptr_reserved = env->code_ptr;
@@ -1651,7 +1653,8 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr, uint32_t 
 {
     uint32_t displacement, scale, reg;
     uint32_t addr;
-    int flag, upper;
+    int flag;
+    int upper, lower;
 
     scale = ptn_ptr->scale;
     reg = ptn_ptr->reg;
@@ -1669,14 +1672,16 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr, uint32_t 
 #else
     upper = text_bound - displacement;
 #endif
+    lower = text_base - displacement;
 
     upper = upper >> scale;
+    lower = lower >> scale;
  
     if (flag == MEM) {
 #ifdef MAP_DATA_SEG
-        if (bss_bound  > displacement) {
+        if (bss_bound  > displacement && text_base < displacement) {
 #else
-        if (text_bound > displacement) {
+        if ((text_bound > displacement) && (text_base < displacement)) {
 #endif
             INCL_COUNT(opt_sha_dyn_count);
 
@@ -1705,31 +1710,32 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr, uint32_t 
     code_emit32(env->code_ptr, (uint32_t)&cur_tb);
     code_emit32(env->code_ptr, (uint32_t)cur_tb);
 #endif
+
+#if 1 
     /* movl regs, (&cur_tb->reg_content) */
     addr = (uint32_t) &(cur_tb->reg_content);
     code_emit8(env->code_ptr, 0x89);
     code_emit8(env->code_ptr, (reg << 3) + 0x5);
     code_emit32(env->code_ptr, addr);
+#endif
 
     bound_tb_map[bound_idx][0] = (uint32_t)env->code_ptr;
     bound_tb_map[bound_idx++][1] = (uint32_t)cur_tb;
 
     /* bound %reg, (shadow_bound) */
-    cur_tb->shadow_bound[0] = 0;
+    cur_tb->shadow_bound[0] = lower;
     cur_tb->shadow_bound[1] = upper;
     code_emit8(env->code_ptr, 0x62);
     code_emit8(env->code_ptr, (reg << 3) | 0x5); /* 00 reg 101 */
     code_emit32(env->code_ptr, (uint32_t)cur_tb->shadow_bound);
 
     INCL_COUNT(opt_sha_dyn_count);
-    if(ind_type == IND_TYPE_CALL) {
         /* ind_call perform "push(dest)" for ret-cache, rollback the SP here */
         /* leal %esp, 4(%esp) */
         code_emit8(env->code_ptr, 0x8d);
         code_emit8(env->code_ptr, 0x64); /*01 100 100 */
         code_emit8(env->code_ptr, 0x24); /*00 100 100 */
         code_emit8(env->code_ptr, 4);
-    }
     /* jmp *offset(,index,scale) */
     /* offset =  displacement + ss_offset
      * jump into the corresponding shadow rodata
@@ -2175,6 +2181,9 @@ bool emit_jmp_near_mem(CPUX86State *env, decode_t *ds)
     code_emit32(env->code_ptr, addr);
     code_emit32(env->code_ptr, (uint32_t)cur_tb->func_addr);
 
+    /* push (dest) */
+    emit_push_rm(&env->code_ptr, ds);
+
 #ifdef DTT_OPT 
     /* first, at the translation period,judge if the instuction's patten is jmp *disp(,reg,scale) or not
      * if it is, then translate this instruction with rodata shadowing method,
@@ -2205,9 +2214,6 @@ bool emit_jmp_near_mem(CPUX86State *env, decode_t *ds)
     }
 #endif
 
-    // cannot be optimized by this method
-    /* push (dest) */
-    emit_push_rm(&env->code_ptr, ds);
 
 #ifdef J_IND_OPT
     cemit_ind_opt(env, IND_TYPE_JMP);

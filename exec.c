@@ -284,6 +284,7 @@ void tb_add_jmp_from(TranslationBlock *tb, TranslationBlock *next_tb, int n)
     next_tb->jmp_from_num[next_tb->jmp_from_index] = n;
     next_tb->jmp_from_index++;
 
+#ifdef DTT_OPT
     /* record how many tbs has more than one entries */
     if (next_tb->is_jmp_reg == 1 && next_tb->jmp_reg_mto == 0 && next_tb->jmp_from_index >= 2)
     {
@@ -296,6 +297,7 @@ void tb_add_jmp_from(TranslationBlock *tb, TranslationBlock *next_tb, int n)
         next_tb->jmp_from_index = 0;
         ///fprintf(stderr, "jmp_from_index overflow\n");
     }
+#endif
 }
 
 TranslationBlock *make_tb(CPUState *env, target_ulong pc, 

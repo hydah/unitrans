@@ -418,11 +418,22 @@ extern int sha_flag;
 		text_base = start;
 		text_bound = (uint32_t)text_base + len;
 
+#ifdef FOR_MPLAYER
+        text_base = 0x7c000000;
+        text_bound = 0x7f000000;
+		if ((text_sha_base = malloc(0x3000000)) == NULL)
+			abort();
+
+	    text_sha_base = GET_PAGE(text_sha_base) + PAGESIZE;
+		text_offset = (uint32_t)text_sha_base - (uint32_t)text_base;
+#else
 		if ((text_sha_base = malloc(len + PAGESIZE)) == NULL)
 			abort();
 
 	    text_sha_base = GET_PAGE(text_sha_base) + PAGESIZE;
 		text_offset = (uint32_t)text_sha_base - (uint32_t)text_base;
+#endif
+
         fprintf(stderr, "text_base is %x \n", text_base);
         fprintf(stderr, "text_bound is %x \n", text_bound);
 	}
@@ -588,9 +599,15 @@ extern int sha_flag;
     }
 #ifdef DTT_OPT
 #ifndef MAP_DATA_SEG
+#ifdef FOR_MPLAYER
+    if (start == 0x08048000) {
+        mprotect(text_sha_base, 0x3000000, PROT_NONE);
+    }
+#else
     if (start == 0x08048000) {
         mprotect(text_sha_base, len, PROT_NONE);
     }
+#endif
 #else
     if (sha_flag == 3) {
 		mprotect(text_sha_base, (uint32_t)bss_bound - (uint32_t)text_base, PROT_NONE);
