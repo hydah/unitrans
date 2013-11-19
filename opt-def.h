@@ -4,28 +4,42 @@
 #define SIEVE_OPT
 #define SEP_SIEVE
 #define COUNT_PROF
+#define COUNT_INSN
 
 //#define DEBUG_MMAP
-#define DTT_OPT
+//#define DTT_OPT
 #ifdef DTT_OPT
     //#define FOR_MPLAYER
     //#define USE_BOUND
     #define PAGESIZE    4096
     #define GET_PAGE(v) (((int)v) & (~(PAGESIZE -1)))
     #define REG_OPT
-
-#ifndef FOR_MPLAYER
-    //#define MAP_DATA_SEG
+#ifdef USE_BOUND
+    //#define BOUND_ELIM_OPT // not safe
 #endif
+    //#define MAP_DATA_SEG
 
 #ifdef COUNT_PROF
     #if !defined(FOR_MPLAYER) && !defined(USE_BOUND) && !defined(MAP_DATA_SEG)
          //#define STAT_DISTRIBUTE
     #endif
     #define STAT_IB_TYPE
+    #define STAT_UNALIGN_ADDR
 #endif //end of COUNT_PROF
 
+#ifdef FOR_MPLAYER
+    #undef MAP_DATA_SEG
+    #undef STAT_DISTRIBUTE
+    #undef BOUND_ELIM_OPT
 #endif
+#ifdef USE_BOUND
+    #undef STAT_DISTRIBUTE
+#endif
+#ifdef MAP_DATA_SEG
+    #undef STAT_DISTRIBUTE
+#endif
+
+#endif // end of DTT_OPT
 
 //#define DEBUG_SHA
 #ifdef DEBUG_SHA
@@ -81,7 +95,7 @@
     #ifdef CALL_IND_OPT
         #define PROF_CIND
     #endif
-    //#define COUNT_INSN
+#define COUNT_INSN
     //#define PROF_RET
 #endif
 

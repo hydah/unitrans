@@ -443,7 +443,6 @@ extern int sha_flag;
 		bss_bound = (uint32_t)bss_base + len;
 
 #ifdef MAP_DATA_SEG
-        free(text_sha_base);
         if ((text_sha_base = malloc(bss_bound - (uint32_t)text_base + PAGESIZE)) == NULL)
 			abort();
 

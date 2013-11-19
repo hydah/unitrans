@@ -190,6 +190,7 @@ typedef struct code_gen_context {
 	uint64_t cind_reg_mem;
 	uint64_t cind_mem;
 	uint64_t cind_reg;
+    uint64_t ib_unaligned_addr;
 #endif
 #endif
     stat_node stat_nodes[STAT_NODE_MAX];
@@ -226,6 +227,39 @@ typedef struct sa_ptn {
 extern sa_ptn *cur_ptn;
 extern int sa_num;
 extern int call_table;
-#endif
+    /* pushf */
+    /* push ecx */            
+    /* lea disp(,reg,scale), ecx */
+/* and ecx, imm */        
+/* jz patch */            
+/* incl (addr) */         
+/* pop ecx */             
+/* popf */                
+#define stat_unaligned_addr(reg)\
+    do {\
+        code_emit8(env->code_ptr, 0x9c);\
+        code_emit8(env->code_ptr, 0x51);\
+        if (flag == DISP_MEM) {\  
+            code_emit8(env->code_ptr, 0x8d);\
+                code_emit8(env->code_ptr, (0x1 << 3) + 0x4);\ 
+                code_emit8(env->code_ptr, (scale << 6) + (reg << 3) + 0x5);\
+                code_emit32(env->code_ptr, displacement);\
+        } else if (flag == REG_MEM) {\
+            code_emit8(env->code_ptr, 0x8d);\
+                code_emit8(env->code_ptr, (0x2 << 6) + (0x1 << 3) + reg);\ 
+                code_emit32(env->code_ptr, displacement);\
+        }\ 
+        code_emit8(env->code_ptr, 0x83u);\
+            code_emit8(env->code_ptr, (0xe << 4) + 0x1);\
+            code_emit8(env->code_ptr, 0x3);\
+            code_emit8(env->code_ptr, 0x74);\
+            code_emit8(env->code_ptr, 0x6);\
+            code_emit8(env->code_ptr, 0xff);\
+            code_emit8(env->code_ptr, 0x05u);\
+            code_emit32(env->code_ptr, (uint32_t)&cgc->ib_unaligned_addr);\
+            code_emit8(env->code_ptr, 0x59);\
+            code_emit8(env->code_ptr, 0x9d);\
+    } while(0)
+#endif      
 
 #endif

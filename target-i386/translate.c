@@ -1719,23 +1719,38 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr, uint32_t 
     code_emit32(env->code_ptr, addr);
 #endif
 
-    bound_tb_map[bound_idx][0] = (uint32_t)env->code_ptr;
-    bound_tb_map[bound_idx++][1] = (uint32_t)cur_tb;
+#ifdef BOUND_ELIM_OPT
+    if(ptn_ptr->flag != DISP_MEM)
+#endif
+    {
+        bound_tb_map[bound_idx][0] = (uint32_t)env->code_ptr;
+        bound_tb_map[bound_idx++][1] = (uint32_t)cur_tb;
 
-    /* bound %reg, (shadow_bound) */
-    cur_tb->shadow_bound[0] = lower;
-    cur_tb->shadow_bound[1] = upper;
-    code_emit8(env->code_ptr, 0x62);
-    code_emit8(env->code_ptr, (reg << 3) | 0x5); /* 00 reg 101 */
-    code_emit32(env->code_ptr, (uint32_t)cur_tb->shadow_bound);
+        if (lower < 0x80000000 && upper >= 0x80000000) {
+            fprintf(stderr, "lower and upper are on the different side\n");
+            exit(0);
+        }
+
+        /* bound %reg, (shadow_bound) */
+        cur_tb->shadow_bound[0] = lower;
+        cur_tb->shadow_bound[1] = upper;
+
+        code_emit8(env->code_ptr, 0x62);
+        code_emit8(env->code_ptr, (reg << 3) | 0x5); /* 00 reg 101 */
+        code_emit32(env->code_ptr, (uint32_t)cur_tb->shadow_bound);
+    }
 
     INCL_COUNT(opt_sha_dyn_count);
-        /* ind_call perform "push(dest)" for ret-cache, rollback the SP here */
-        /* leal %esp, 4(%esp) */
-        code_emit8(env->code_ptr, 0x8d);
-        code_emit8(env->code_ptr, 0x64); /*01 100 100 */
-        code_emit8(env->code_ptr, 0x24); /*00 100 100 */
-        code_emit8(env->code_ptr, 4);
+#ifdef STAT_UNALIGN_ADDR
+    stat_unaligned_addr(reg);
+#endif
+    /* ind_call perform "push(dest)" for ret-cache, rollback the SP here */
+    /* leal %esp, 4(%esp) */
+    code_emit8(env->code_ptr, 0x8d);
+    code_emit8(env->code_ptr, 0x64); /*01 100 100 */
+    code_emit8(env->code_ptr, 0x24); /*00 100 100 */
+    code_emit8(env->code_ptr, 4);
+
     /* jmp *offset(,index,scale) */
     /* offset =  displacement + ss_offset
      * jump into the corresponding shadow rodata
@@ -1806,6 +1821,9 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr, uint32_t 
     code_emit8(env->code_ptr, 4);
 
     INCL_COUNT(opt_sha_dyn_count);
+#ifdef STAT_UNALIGN_ADDR
+    stat_unaligned_addr(reg);
+#endif
 
     /* jmp *offset(,index,scale) */
     /* offset =  displacement + ss_offset 
@@ -1991,6 +2009,7 @@ bool emit_call_near_mem(CPUX86State *env, decode_t *ds)
     }
 #endif
 
+#undef CALL_IND_OPT
 #ifdef CALL_IND_OPT
     cemit_ind_opt(env, IND_TYPE_CALL);
 #else
@@ -2244,6 +2263,7 @@ bool emit_jmp_near_mem(CPUX86State *env, decode_t *ds)
     cur_tb->type = IND_TYPE_JMP;
         
     INCL_COUNT(jind_dyn_count);
+    ADD_INSNS_COUNT(cgc->insn_dyn_count, cur_tb->insn_count + 1);
 
     /* mov func_addr, (&env->ind_dest) */
     addr = (uint32_t)&(env->ind_dest);
@@ -2287,6 +2307,7 @@ bool emit_jmp_near_mem(CPUX86State *env, decode_t *ds)
 #endif
 
 
+#undef J_IND_OPT
 #ifdef J_IND_OPT
     cemit_ind_opt(env, IND_TYPE_JMP);
 #else

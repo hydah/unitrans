@@ -683,6 +683,9 @@ void prof_stat(CPUX86State *env)
 #endif
 
 #ifdef DTT_OPT
+    fprintf(stderr, "ib_unaligned_addr: \t%llu\n", cgc->ib_unaligned_addr);
+    fprintf(stderr, "ib_unaligned_addr_rate: \t%s%%\n", 
+            calc_perc(cgc->ib_unaligned_addr, cgc->opt_sha_dyn_count));
     fprintf(stderr, "more than one entry tb: %d\n", nb_tb_jmp_reg);
     fprintf(stderr, "shadow_opt_ind_count: \t%llu\n", cgc->opt_sha_dyn_count);
     fprintf(stderr, "shadow_opt_ind_rate: \t%s%%\n", 
