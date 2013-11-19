@@ -1548,7 +1548,6 @@ static int judge_type(decode_t *tds, sa_ptn *ptn_ptr)
     return CANNOT_OPT;
 }
 
-//#define USE_BOUND
 static void cemit_cancel_shadow(CPUX86State *env, TranslationBlock *tb, uint32_t reg_con)
 {
     uint8_t *code_ptr_reserved;
@@ -2256,7 +2255,7 @@ bool emit_int(CPUX86State *env, decode_t *ds)
 
         *patch_addr = env->code_ptr - patch_addr - 1;
 
-        /* cmp %eax ,__NR_sigaction) */
+        /* cmp %eax ,__NR_rt_sigaction) */
         code_emit8(env->code_ptr, 0x3d);
         code_emit32(env->code_ptr, __NR_rt_sigaction);
         /* jne */

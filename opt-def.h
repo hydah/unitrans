@@ -8,6 +8,7 @@
 //#define DEBUG_MMAP
 #define DTT_OPT
 #ifdef DTT_OPT
+    #define USE_BOUND
     #define PAGESIZE    4096
     #define GET_PAGE(v) (((int)v) & (~(PAGESIZE -1)))
     #define REG_OPT
