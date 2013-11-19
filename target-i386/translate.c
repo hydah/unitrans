@@ -1711,7 +1711,7 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr, uint32_t 
     code_emit32(env->code_ptr, (uint32_t)cur_tb);
 #endif
 
-#if 1 
+#if 1 // to get the exceeding adress.
     /* movl regs, (&cur_tb->reg_content) */
     addr = (uint32_t) &(cur_tb->reg_content);
     code_emit8(env->code_ptr, 0x89);
@@ -1753,7 +1753,7 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr, uint32_t 
     }
 
 #else
-    uint8_t *patch_here;
+    uint8_t *patch2, *patch1;
     if (ind_type == IND_TYPE_JMP) {
         /* pushf */
         code_emit8(env->code_ptr, 0x9c); 
@@ -1765,28 +1765,45 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr, uint32_t 
     code_emit32(env->code_ptr, upper);
 
     if (upper < 0) {
-        /* jg patch-here //signed jump*/
+        /* jg patch1 //signed jump*/
         code_emit8(env->code_ptr, 0x7f);
-        patch_here = env->code_ptr;
+        patch1 = env->code_ptr;
         code_emit8(env->code_ptr, NEED_PATCH_8);
     } else {
-        /* ja patch-here //unsigned jump*/
+        /* ja patch1 //unsigned jump*/
         code_emit8(env->code_ptr, 0x73);
-        patch_here = env->code_ptr;
+        patch1 = env->code_ptr;
+        code_emit8(env->code_ptr, NEED_PATCH_8);
+    }
+
+    /*cmp reg, lower */
+    code_emit8(env->code_ptr, 0x81);
+    code_emit8(env->code_ptr, (0x1f << 3) + reg); /* 11 111 reg */
+    code_emit32(env->code_ptr, lower);
+
+    if (lower < 0) {
+        /* jl patch2 //signed jump*/
+        code_emit8(env->code_ptr, 0x7c);
+        patch2 = env->code_ptr;
+        code_emit8(env->code_ptr, NEED_PATCH_8);
+    } else {
+        /* jb patch2 //unsigned jump*/
+        code_emit8(env->code_ptr, 0x72);
+        patch2 = env->code_ptr;
         code_emit8(env->code_ptr, NEED_PATCH_8);
     }
 
     if (ind_type == IND_TYPE_JMP) {
         /* popf */
         code_emit8(env->code_ptr, 0x9d);
-    } else {
-        /* ind_call perform "push(dest)" for ret-cache, rollback the SP here */
-        /* leal %esp, 4(%esp) */
-        code_emit8(env->code_ptr, 0x8d);
-        code_emit8(env->code_ptr, 0x64); /*01 100 100 */
-        code_emit8(env->code_ptr, 0x24); /*00 100 100 */
-        code_emit8(env->code_ptr, 4);
-    }
+    } 
+
+    /* ind_call perform "push(dest)" for ret-cache, rollback the SP here */
+    /* leal %esp, 4(%esp) */
+    code_emit8(env->code_ptr, 0x8d);
+    code_emit8(env->code_ptr, 0x64); /*01 100 100 */
+    code_emit8(env->code_ptr, 0x24); /*00 100 100 */
+    code_emit8(env->code_ptr, 4);
 
     INCL_COUNT(opt_sha_dyn_count);
 
@@ -1806,9 +1823,58 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr, uint32_t 
         code_emit32(env->code_ptr, displacement + text_offset);
     }
 
-    //patch-here
-    *patch_here = env->code_ptr - patch_here - 1;
-    
+
+    // patch1
+    *patch1 = env->code_ptr - patch1 - 1;
+#ifdef STAT_DISTRIBUTE
+    int temp;
+    uint8_t  *patch3, *away1, *away2;
+
+    temp = bss_bound - displacement;
+    temp = temp >> scale;
+
+    /* cmp reg, temp*/
+    code_emit8(env->code_ptr, 0x81);
+    code_emit8(env->code_ptr, (0x1f << 3) + reg); /* 11 111 reg */
+    code_emit32(env->code_ptr, temp);
+
+    if (temp < 0) {
+        /* jg patch3 //signed jump*/
+        code_emit8(env->code_ptr, 0x7f);
+        patch3 = env->code_ptr;
+        code_emit8(env->code_ptr, NEED_PATCH_8);
+    } else {
+        /* ja patch3 //unsigned jump*/
+        code_emit8(env->code_ptr, 0x73);
+        patch3 = env->code_ptr;
+        code_emit8(env->code_ptr, NEED_PATCH_8);
+    }
+    INCL_COUNT(data_seg);
+    /* jmp away1 */
+    code_emit8(env->code_ptr, 0xeb);
+    away1 = env->code_ptr;
+    code_emit8(env->code_ptr, NEED_PATCH_8);
+
+    // patch2
+    *patch2 = env->code_ptr - patch2 - 1;
+    INCL_COUNT(below_text_seg);
+    /* jmp away2 */
+    code_emit8(env->code_ptr, 0xeb);
+    away2 = env->code_ptr;
+    code_emit8(env->code_ptr, NEED_PATCH_8);
+
+    // patch3
+    *patch3 = env->code_ptr - patch3 - 1;
+    INCL_COUNT(heap_stack_seg);
+
+    // away
+    *away1 = env->code_ptr - away1 - 1;
+    *away2 = env->code_ptr - away2 - 1;
+
+#else
+    // patch2
+    *patch2 = env->code_ptr - patch2 - 1;
+#endif
     if (ind_type == IND_TYPE_JMP) { 
         /* popf */
         code_emit8(env->code_ptr, 0x9d);
@@ -1816,7 +1882,10 @@ void shadow_translate(CPUX86State *env, decode_t *ds, sa_ptn *ptn_ptr, uint32_t 
 
     INCL_COUNT(opt_failed_sha_dyn_count);
 
+#ifndef STAT_DISTRIBUTE
     cemit_prof_shadow_fail(env, cur_tb);
+#endif
+
 #endif
 }
 #endif // end of DTT_OPT
@@ -1906,6 +1975,7 @@ bool emit_call_near_mem(CPUX86State *env, decode_t *ds)
     memset(ptn_ptr, 0, sizeof(sa_ptn));
     retno = judge_type(ds, ptn_ptr);
 
+#ifdef STAT_IB_TYPE
     if (ptn_ptr->flag == DISP_MEM)
         INCL_COUNT(cind_disp_mem);
     else if (ptn_ptr->flag == MEM)
@@ -1914,6 +1984,7 @@ bool emit_call_near_mem(CPUX86State *env, decode_t *ds)
         INCL_COUNT(cind_reg_mem);
     else if (ptn_ptr->flag == REG)
         INCL_COUNT(cind_reg);
+#endif
 
     if (retno == CAN_OPT) {
         shadow_translate(env, ds, ptn_ptr, IND_TYPE_CALL);
@@ -2198,7 +2269,7 @@ bool emit_jmp_near_mem(CPUX86State *env, decode_t *ds)
     memset(ptn_ptr, 0, sizeof(sa_ptn));
 
     retno = judge_type(ds, ptn_ptr);
-
+#ifdef STAT_IB_TYPE
     if (ptn_ptr->flag == DISP_MEM)
         INCL_COUNT(jind_disp_mem);
     else if (ptn_ptr->flag == MEM)
@@ -2208,6 +2279,7 @@ bool emit_jmp_near_mem(CPUX86State *env, decode_t *ds)
     else if (ptn_ptr->flag == REG) {
         INCL_COUNT(jind_reg);
     }
+#endif
 
     if (retno == CAN_OPT) {
         shadow_translate(env, ds, ptn_ptr, IND_TYPE_JMP);

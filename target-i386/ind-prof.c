@@ -668,21 +668,32 @@ void prof_stat(CPUX86State *env)
     fprintf(stderr, "sv_miss_dyn: \t%u\n", cgc->sv_miss_count);
     fprintf(stderr, "sv_travel_dyn: \t%llu\n", cgc->sv_travel_count);
     fprintf(stderr, "jind_dyn: \t%llu\n", cgc->jind_dyn_count);
+#ifdef DTT_OPT
     fprintf(stderr, "   jind_disp_mem: \t%llu\n", cgc->jind_disp_mem);
     fprintf(stderr, "   jind_reg_mem: \t%llu\n", cgc->jind_reg_mem);
     fprintf(stderr, "   jind_mem: \t\t%llu\n", cgc->jind_mem);
     fprintf(stderr, "   jind_reg: \t\t%llu\n", cgc->jind_reg);
+#endif
     fprintf(stderr, "cind_dyn: \t%llu\n", cgc->cind_dyn_count);
+#ifdef DTT_OPT
     fprintf(stderr, "   cind_disp_mem: \t%llu\n", cgc->cind_disp_mem);
     fprintf(stderr, "   cind_reg_mem: \t%llu\n", cgc->cind_reg_mem);
     fprintf(stderr, "   cind_mem: \t\t%llu\n", cgc->cind_mem);
     fprintf(stderr, "   cind_reg: \t\t%llu\n", cgc->cind_reg);
+#endif
 
 #ifdef DTT_OPT
     fprintf(stderr, "more than one entry tb: %d\n", nb_tb_jmp_reg);
     fprintf(stderr, "shadow_opt_ind_count: \t%llu\n", cgc->opt_sha_dyn_count);
     fprintf(stderr, "shadow_opt_ind_rate: \t%s%%\n", 
                      calc_perc(cgc->opt_sha_dyn_count, cgc->jind_dyn_count + cgc->cind_dyn_count));
+    fprintf(stderr, "shadow_opt_failed_ind_count: \t%llu\n", cgc->opt_failed_sha_dyn_count);
+#ifdef STAT_DISTRIBUTE
+    fprintf(stderr, "   data_seg: \t%llu\n", cgc->data_seg);
+    fprintf(stderr, "   below_text_seg: \t%llu\n", cgc->below_text_seg);
+    fprintf(stderr, "   heap_stack_seg: \t\t%llu\n", cgc->heap_stack_seg);
+#endif
+
     fprintf(stderr, "shadow_opt_faild_ind_rate: \t%s%%\n", 
                      calc_perc(cgc->opt_failed_sha_dyn_count, cgc->jind_dyn_count + cgc->cind_dyn_count));
 #endif

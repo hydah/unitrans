@@ -437,21 +437,22 @@ extern int sha_flag;
         fprintf(stderr, "text_base is %x \n", text_base);
         fprintf(stderr, "text_bound is %x \n", text_bound);
 	}
-#ifdef MAP_DATA_SEG
     sha_flag++;
     if (sha_flag == 3) {
 		bss_base = start;
 		bss_bound = (uint32_t)bss_base + len;
 
-		if ((text_sha_base = malloc(bss_bound - (uint32_t)text_base + PAGESIZE)) == NULL)
+#ifdef MAP_DATA_SEG
+        free(text_sha_base);
+        if ((text_sha_base = malloc(bss_bound - (uint32_t)text_base + PAGESIZE)) == NULL)
 			abort();
 
 	    text_sha_base = GET_PAGE(text_sha_base) + PAGESIZE;
 		text_offset = (uint32_t)text_sha_base - (uint32_t)text_base;
+#endif
         fprintf(stderr, "bss_base is %x \n", bss_base);
         fprintf(stderr, "bss_bound is %x \n", bss_bound);
     }
-#endif
 #endif
 
     /* When mapping files into a memory area larger than the file, accesses

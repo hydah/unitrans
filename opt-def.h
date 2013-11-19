@@ -8,14 +8,23 @@
 //#define DEBUG_MMAP
 #define DTT_OPT
 #ifdef DTT_OPT
-    #define FOR_MPLAYER
-    #define USE_BOUND
+    //#define FOR_MPLAYER
+    //#define USE_BOUND
     #define PAGESIZE    4096
     #define GET_PAGE(v) (((int)v) & (~(PAGESIZE -1)))
     #define REG_OPT
+
 #ifndef FOR_MPLAYER
     //#define MAP_DATA_SEG
 #endif
+
+#ifdef COUNT_PROF
+    #if !defined(FOR_MPLAYER) && !defined(USE_BOUND) && !defined(MAP_DATA_SEG)
+         //#define STAT_DISTRIBUTE
+    #endif
+    #define STAT_IB_TYPE
+#endif //end of COUNT_PROF
+
 #endif
 
 //#define DEBUG_SHA

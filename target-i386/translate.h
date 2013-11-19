@@ -182,6 +182,10 @@ typedef struct code_gen_context {
 	uint64_t opt_sha_dyn_count;
     uint64_t opt_failed_sha_dyn_count;
 
+    uint64_t data_seg;
+    uint64_t below_text_seg;
+    uint64_t heap_stack_seg;
+
 	uint64_t cind_disp_mem;
 	uint64_t cind_reg_mem;
 	uint64_t cind_mem;
