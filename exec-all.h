@@ -169,8 +169,8 @@ struct TranslationBlock {
     uint8_t jmp_from_num[TB_FROM_MAX]; /* */
     uint32_t jmp_from_index;
 
-    uint32_t prof_pos;
 #ifdef IND_OPT
+    uint32_t prof_pos;
     uint32_t type;
 
     uint32_t jind_src_addr[IND_SLOT_MAX];

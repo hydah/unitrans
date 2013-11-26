@@ -699,6 +699,7 @@ abi_long do_brk(abi_ulong new_brk)
     abi_long mapped_addr;
     int	new_alloc_size;
 
+    fprintf(stderr, "the brk_page is %x\n", new_brk);
     if (!new_brk)
         return target_brk;
     if (new_brk < target_original_brk)
@@ -712,7 +713,6 @@ abi_long do_brk(abi_ulong new_brk)
     	return target_brk;
     }
 
-    fprintf(stderr, "the brk_page is %x\n", brk_page);
     /* We need to allocate more memory after the brk... */
     new_alloc_size = HOST_PAGE_ALIGN(new_brk - brk_page + 1);
     mapped_addr = get_errno(target_mmap(brk_page, new_alloc_size,

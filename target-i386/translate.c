@@ -235,15 +235,16 @@ void codecache_prologue_init(CPUX86State *env)
     code_emit8(code_ptr, 0x05 | (R_ESP << 3));
     code_emit32(code_ptr, (uint32_t)&(env->esp_tmp));
     /* pop %ebx, %ebp, %esi, %edi */
-    code_emit8(code_ptr, 0x58 | R_EBX);
-    code_emit8(code_ptr, 0x58 | R_EBP);
-    code_emit8(code_ptr, 0x58 | R_ESI);
     code_emit8(code_ptr, 0x58 | R_EDI);
+    code_emit8(code_ptr, 0x58 | R_ESI);
+    code_emit8(code_ptr, 0x58 | R_EBP);
+    code_emit8(code_ptr, 0x58 | R_EBX);
 
     /* movl env->ret_tb, %eax */
     code_emit8(code_ptr, 0x8b);
     code_emit8(code_ptr, 0x05 | (R_EAX << 3));
     code_emit32(code_ptr, (uint32_t)&(env->ret_tb));
+
     /* ret */
     code_emit8(code_ptr, 0xc3); 
 
@@ -474,15 +475,6 @@ void gen_target_code(CPUState *env, TranslationBlock *tb)
 
     cur_stb->pc_start = tb->pc;
     cur_stb->tc_ptr = (uint32_t)(tb->tc_ptr);
-#ifdef PATCH_IN_TB
-    int i;
-    cgc->stbs_recent[(cgc->stb_recent_num) % STB_DEPTH] = cur_stb;
-    cgc->stb_recent_num++;
-    for(i=0; i < OFF_MAX; i++) {
-       cur_stb->insn_offset[i] = 0xdeadbeaf;
-    }
-#endif
-
     ///printf("start tb_gen_code cgc->pc_ptr = 0x%x\n", cgc->pc_ptr);
     for(num_insns = 0; ;num_insns++) {
 
@@ -496,12 +488,6 @@ void gen_target_code(CPUState *env, TranslationBlock *tb)
 
         ABORT_IF((ds->opstate & OPSTATE_ADDR16), "error: OPSTATE_ADDR16\n");
 
-#ifdef PATCH_IN_TB
-        int src_off;
-        src_off = cgc->pc_ptr - cgc->pc_start;
-        if(src_off >= 0 && src_off < OFF_MAX)
-            cur_stb->insn_offset[src_off] = (uint32_t)(env->code_ptr);
-#endif
         cgc->insn_len = ds->decode_eip - cgc->pc_ptr;
         cgc->pc_ptr = ds->decode_eip;
 

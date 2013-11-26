@@ -394,6 +394,9 @@ int cpu_exec(CPUState *env1)
         env->ret_tb = 0;
         env->trapnr = -1;
         env->ind_type = NOT_IND;
+        if (tb->pc == 0x80487f6) {
+            fprintf(stderr, "this is bingo!\n");
+        }
        
         /* enter code cache */
         prev_tb = tcg_qemu_tb_exec(tc_ptr);

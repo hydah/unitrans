@@ -4,7 +4,7 @@
 #define SIEVE_OPT
 #define SEP_SIEVE
 #define COUNT_PROF
-#define COUNT_INSN
+//#define COUNT_INSN
 //#define DEBUG
 //#define SHA_RODATA
 
@@ -56,7 +56,7 @@
     #define RAS_OPT
 #endif
 
-#define TRANS_NEXT
+//#define TRANS_NEXT
 //#define PATCH_IN_TB
 
 #define PATH_STACK_SIZE	64

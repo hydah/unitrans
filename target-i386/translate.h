@@ -101,6 +101,7 @@ typedef struct SuperTransBlock {
 #endif
 } SuperTransBlock;
 
+#ifdef IND_OPT
 typedef struct stat_node {
     uint32_t src_addr;
     uint32_t path[PATH_DEPTH + 1];
@@ -121,7 +122,7 @@ typedef struct ind_info_node {
     uint32_t tgt_addr[IND_SLOT_MAX];
     uint32_t path[PATH_DEPTH + 1];
 } ind_info_node;
-
+#endif
 typedef struct code_gen_context {
     uint8_t *tb_ret_addr;
     uint32_t pc_ptr;
@@ -177,7 +178,6 @@ typedef struct code_gen_context {
 
     ind_info_node info_nodes[STAT_NODE_MAX];
     int info_node_num;
-
 #ifdef RETRANS_IND
     uint32_t retrans_tb_count;
 #endif
